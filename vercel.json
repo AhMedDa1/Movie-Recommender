@@ -2,25 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "movie_recommendation/wsgi.py",
-      "use": "@vercel/python",
-      "config": {
-        "runtime": "vercel-python@3.12"
-      }
-    },
-    {
-      "src": "staticfiles/**/*",
-      "use": "@vercel/static"
+      "src": "Dockerfile",
+      "use": "@vercel/docker"
     }
   ],
   "routes": [
     {
-      "src": "/static/(.*)",
-      "dest": "/staticfiles/$1"
-    },
-    {
       "src": "/(.*)",
-      "dest": "movie_recommendation/wsgi.py"
+      "dest": "/"
     }
   ]
 }

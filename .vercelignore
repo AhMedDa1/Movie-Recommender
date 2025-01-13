@@ -1,0 +1,6 @@
+venv/
+*.pyc
+__pycache__/
+staticfiles/  # Exclude if you're using collectstatic
+media/        # Exclude uploaded files
+*.log
