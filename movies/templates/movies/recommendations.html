@@ -1,0 +1,29 @@
+{% extends 'movies/base.html' %}
+
+{% block title %}Recommendations{% endblock %}
+
+{% block content %}
+{% if movies %}
+    <div class="row mt-4">
+        {% for movie in movies %}
+            <div class="col-md-3 mb-4">
+                <div class="card">
+                    <img src="{{ movie.poster }}" class="card-img-top" alt="Movie Poster">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ movie.title }}</h5>
+                        <p class="card-text">
+                            {{ movie.description|truncatechars:100 }}
+                            <br>
+                            <strong>Predicted Rating:</strong> {{ movie.predicted_rating }} / 5
+                            <span><a href="#" class="text-primary">Read More</a></span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <p class="text-center mt-4">No recommendations available. Please rate more movies to get personalized recommendations.</p>
+{% endif %}
+
+{% endblock %}

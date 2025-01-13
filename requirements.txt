@@ -1,0 +1,9 @@
+dj_database_url==2.3.0
+Django==5.1.4
+matplotlib==3.10.0
+numpy==2.2.1
+pandas==2.2.3
+Requests==2.32.3
+scikit_learn==1.6.1
+seaborn==0.13.2
+tqdm==4.67.1

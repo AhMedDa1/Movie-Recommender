@@ -1,0 +1,130 @@
+{% extends 'movies/base.html' %}
+
+{% block title %}Rate Movies{% endblock %}
+
+{% block content %}
+<style>
+    .star-rating {
+        font-size: 1.5rem;
+        cursor: pointer;
+    }
+    .star-rating .checked {
+        color: gold;
+    }
+    .suggestion-item:hover {
+        background-color: #f0f0f0;
+        cursor: pointer;
+    }
+</style>
+<script>
+    // Handle Star Rating
+    function setRating(movieId, rating) {
+        const stars = document.querySelectorAll(`#stars_${movieId} .star`);
+        stars.forEach((star, index) => {
+            star.classList.toggle('checked', index < rating);
+        });
+        document.getElementById(`rating_input_${movieId}`).value = rating;
+    }
+
+    // Autocomplete Search
+    function showSuggestions(input) {
+        const suggestions = document.getElementById("suggestions");
+        suggestions.innerHTML = "";
+        if (input.length > 0) {
+            fetch(`/rate/?query=${input}&autocomplete=true`)
+                .then(response => response.json())
+                .then(data => {
+                    data.forEach(movie => {
+                        const div = document.createElement("div");
+                        div.textContent = movie.title;
+                        div.classList.add("suggestion-item", "p-2");
+                        div.onclick = () => {
+                            document.getElementById("search").value = movie.title;
+                            suggestions.innerHTML = "";
+                        };
+                        suggestions.appendChild(div);
+                    });
+                });
+        }
+    }
+
+    // Load More Movies
+    let page = 1;
+    function loadMoreMovies() {
+        page++;
+        fetch(`/rate/?page=${page}&load_more=true`)
+            .then(response => response.json())
+            .then(data => {
+                const container = document.getElementById("movies-container");
+                data.forEach(movie => {
+                    const col = document.createElement("div");
+                    col.classList.add("col-md-4", "mb-4");
+                    col.innerHTML = `
+                        <div class="card h-100">
+                            <img src="${movie.poster}" class="card-img-top" alt="Movie Poster">
+                            <div class="card-body">
+                                <h5 class="card-title">${movie.title}</h5>
+                                <p class="card-text">
+                                    ${movie.description.substring(0, 100)}...
+                                    <span><a href="#" class="text-primary">Read More</a></span>
+                                </p>
+                                <div id="stars_${movie.movieId}" class="star-rating">
+                                    <span class="star" onclick="setRating('${movie.movieId}', 1)">★</span>
+                                    <span class="star" onclick="setRating('${movie.movieId}', 2)">★</span>
+                                    <span class="star" onclick="setRating('${movie.movieId}', 3)">★</span>
+                                    <span class="star" onclick="setRating('${movie.movieId}', 4)">★</span>
+                                    <span class="star" onclick="setRating('${movie.movieId}', 5)">★</span>
+                                </div>
+                                <input type="hidden" id="rating_input_${movie.movieId}" name="rating_${movie.movieId}" value="0">
+                            </div>
+                        </div>`;
+                    container.appendChild(col);
+                });
+            });
+    }
+</script>
+
+<div class="container mt-4">
+    <!-- Search Bar -->
+    <form class="mb-4 position-relative">
+        <input type="text" id="search" name="query" value="{{ query }}" class="form-control me-2" 
+               placeholder="Search for a movie..." oninput="showSuggestions(this.value)">
+        <div id="suggestions" class="position-absolute bg-white border" style="z-index: 10; max-height: 200px; overflow-y: auto;"></div>
+    </form>
+    <p class="text-center mt-3">Total Movies: {{ total_movies }}</p>
+
+
+    <!-- Movie Cards -->
+    <form method="post" id="movies-form">
+        {% csrf_token %}
+        <div id="movies-container" class="row">
+            {% for movie in movies %}
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100">
+                        <img src="{{ movie.poster }}" class="card-img-top" alt="Movie Poster">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ movie.title }}</h5>
+                            <p class="card-text">
+                                {{ movie.description|truncatechars:100 }}
+                                <span><a href="#" class="text-primary">Read More</a></span>
+                            </p>
+                            <div id="stars_{{ forloop.counter }}" class="star-rating">
+                                <span class="star" onclick="setRating('{{ forloop.counter }}', 1)">★</span>
+                                <span class="star" onclick="setRating('{{ forloop.counter }}', 2)">★</span>
+                                <span class="star" onclick="setRating('{{ forloop.counter }}', 3)">★</span>
+                                <span class="star" onclick="setRating('{{ forloop.counter }}', 4)">★</span>
+                                <span class="star" onclick="setRating('{{ forloop.counter }}', 5)">★</span>
+                            </div>
+                            <input type="hidden" id="rating_input_{{ forloop.counter }}" name="rating_{{ forloop.counter }}" value="0">
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+        <div class="text-center mt-4">
+            <button type="button" class="btn btn-secondary" onclick="loadMoreMovies()">Load More</button>
+        </div>
+        <button type="submit" class="btn btn-primary w-100 mt-4">Submit Ratings</button>
+    </form>
+</div>
+{% endblock %}

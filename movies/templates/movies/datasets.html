@@ -1,0 +1,184 @@
+{% extends 'movies/base.html' %}
+
+{% block title %}Datasets and Visualizations{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="text-center">Datasets and Visualizations</h1>
+
+    <!-- Buttons -->
+    <div class="d-flex justify-content-center mb-4">
+        <a href="?action=reprocess" class="btn btn-danger mx-2">Reprocess Dataset</a> <!-- New button -->
+        <a href="?action=ratings" class="btn btn-primary mx-2">Ratings</a>
+        <a href="?action=movies" class="btn btn-secondary mx-2">Movies</a>
+        <a href="?action=map" class="btn btn-info mx-2">Map</a>
+        <button class="btn btn-success mx-2" id="train-btn">Train Data</button>
+        <button class="btn btn-warning mx-2" id="test-btn">Test Data</button>
+        <button class="btn btn-light mx-2" id="combination-btn">Combination Plot</button>
+        <a href="?action=plot_power_law" class="btn btn-dark mx-2">Plot Power Law</a>
+    </div>
+
+    <!-- Metadata and Description -->
+    {% if message %}
+        <div class="alert alert-info">{{ message }}</div>
+    {% endif %}
+    {% if description %}
+        <div class="alert alert-secondary">{{ description }}</div>
+    {% endif %}
+
+    <!-- Search Bar -->
+    {% if action in 'ratings movies map train test' %}
+    <div class="d-flex justify-content-end mb-4">
+        <form method="get" id="search-form" class="d-flex">
+            <input type="hidden" name="action" value="{{ action }}">
+            {% if user_id %}
+                <input type="hidden" name="user_id" value="{{ user_id }}">
+            {% endif %}
+            <input type="text" name="search" class="form-control me-2" placeholder="Search {{ action }}">
+            <button type="submit" class="btn btn-outline-primary">Search</button>
+        </form>
+    </div>
+    {% endif %}
+
+    <!-- Table Container -->
+    <div class="table-responsive mt-4" id="data-container">
+        {% if data and data|length > 0 %}
+        <table class="table table-striped" id="data-table">
+            <thead>
+                <tr>
+                    {% if action == 'map' %}
+                        <th>Movie ID</th>
+                        <th>Index</th>
+                        <th>Title</th>
+                    {% elif action in 'ratings train test' %}
+                        <th>Movie ID</th>
+                        <th>Rating</th>
+                        <th>Title</th>
+                    {% elif action == 'movies' %}
+                        <th>Movie ID</th>
+                        <th>Title</th>
+                        <th>Genres</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in data %}
+                <tr>
+                    {% if action == 'map' %}
+                        <td>{{ row.movieId }}</td>
+                        <td>{{ row.index }}</td>
+                        <td>{{ row.title }}</td>
+                    {% elif action in 'ratings train test' %}
+                        <td>{{ row.movieId }}</td>
+                        <td>{{ row.rating }}</td>
+                        <td>{{ row.title }}</td>
+                    {% elif action == 'movies' %}
+                        <td>{{ row.movieId }}</td>
+                        <td>{{ row.title }}</td>
+                        <td>{{ row.genres }}</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+        <!-- No Data Message -->
+        {% if not data or data|length == 0 %}
+        <p class="text-center text-muted">No data available. Please try searching or changing the action.</p>
+        {% endif %}
+    </div>
+
+    <!-- Load More Button -->
+    {% if next_page %}
+    <div class="mt-4 text-center">
+        <button id="load-more-btn" 
+                data-next-page="{{ next_page }}" 
+                data-action="{{ action }}"
+                class="btn btn-primary">Load More</button>
+    </div>
+    {% endif %}
+
+    <!-- Train/Test Input -->
+    <div id="train-test-input" class="mt-3 d-none">
+        <form id="train-test-form" method="get">
+            <input type="hidden" name="action" id="action-field">
+            <input type="text" name="user_id" placeholder="Enter User ID" class="form-control mb-2">
+            <button type="submit" class="btn btn-primary w-100">Get Data</button>
+        </form>
+    </div>
+
+    <!-- Combination Plot -->
+    <div id="combination-input" class="mt-3 d-none">
+        <h3>Select a Plot Type</h3>
+        <button class="btn btn-outline-primary mb-2 w-100" onclick="plotCombination('ratings_distribution')">Distribution of Ratings</button>
+        <button class="btn btn-outline-secondary mb-2 w-100" onclick="plotCombination('ratings_log')">Power Law (Log-Log Scale)</button>
+        <button class="btn btn-outline-info mb-2 w-100" onclick="plotCombination('movies_genre_distribution')">Distribution of Movies by Genre</button>
+        <button class="btn btn-outline-success mb-2 w-100" onclick="plotCombination('average_rating_genre')">Average Rating by Genre</button>
+        <button class="btn btn-outline-warning mb-2 w-100" onclick="plotCombination('rating_count_genre')">Rating Count by Genre</button>
+        <button class="btn btn-outline-dark mb-2 w-100" onclick="plotCombination('top_movies')">Top 10 Most Popular Movies</button>
+    </div>
+
+    <!-- Plot Display -->
+    {% if plot_image %}
+    <div class="mt-4 text-center">
+        <h3>Generated Plot</h3>
+        <img src="data:image/png;base64,{{ plot_image }}" alt="Plot" class="img-fluid">
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const trainBtn = document.getElementById('train-btn');
+        const testBtn = document.getElementById('test-btn');
+        const combinationBtn = document.getElementById('combination-btn');
+        const trainTestInput = document.getElementById('train-test-input');
+        const combinationInput = document.getElementById('combination-input');
+        const actionField = document.getElementById('action-field');
+        const loadMoreBtn = document.getElementById('load-more-btn');
+
+        // Show Train Input
+        trainBtn.addEventListener('click', function () {
+            trainTestInput.classList.remove('d-none');
+            combinationInput.classList.add('d-none');
+            actionField.value = "train";
+        });
+
+        // Show Test Input
+        testBtn.addEventListener('click', function () {
+            trainTestInput.classList.remove('d-none');
+            combinationInput.classList.add('d-none');
+            actionField.value = "test";
+        });
+
+        // Show Combination Plot Input
+        combinationBtn.addEventListener('click', function () {
+            combinationInput.classList.remove('d-none');
+            trainTestInput.classList.add('d-none');
+        });
+
+        // Combination Plot Functionality
+        window.plotCombination = function (plotType) {
+            window.location.href = `/datasets/?action=plot_combination&plot_type=${plotType}`;
+        };
+
+        // Load More Functionality
+        if (loadMoreBtn) {
+            loadMoreBtn.addEventListener('click', function () {
+                const nextPage = loadMoreBtn.dataset.nextPage;
+                const action = loadMoreBtn.dataset.action;
+                fetch(`/datasets/?action=${action}&page=${nextPage}`)
+                    .then(response => response.text())
+                    .then(html => {
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = html;
+                        const newRows = tempDiv.querySelector('#data-table tbody').innerHTML;
+                        document.querySelector('#data-table tbody').insertAdjacentHTML('beforeend', newRows);
+                        loadMoreBtn.dataset.nextPage = tempDiv.querySelector('#load-more-btn')?.dataset.nextPage || null;
+                        if (!tempDiv.querySelector('#load-more-btn')) loadMoreBtn.remove();
+                    });
+            });
+        }
+    });
+</script>
+{% endblock %}
