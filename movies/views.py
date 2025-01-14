@@ -72,31 +72,70 @@ def register_view(request):
 
     return render(request, 'movies/register.html')
 
+def fetch_poster(tmdb_id):
+    """
+    Fetch the poster URL for a specific movie by tmdbId.
+    
+    :param tmdb_id: The TMDB ID of the movie.
+    :return: URL of the movie poster or None if unavailable.
+    """
+    url = f"https://api.themoviedb.org/3/movie/{tmdb_id}?api_key={settings.TMDB_API_KEY}&language=en-US"
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            poster_path = data.get("poster_path")
+            return f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
+    except Exception as e:
+        print(f"Error fetching poster for tmdbId {tmdb_id}: {e}")
+    return None
 
-def fetch_tmdb_movies():
-    """Fetch popular movies from TMDB API."""
-    url = "https://api.themoviedb.org/3/movie/popular"
-    headers = {
-        "Authorization": f"Bearer {settings.TMDB_READ_ACCESS_TOKEN}",  # Use settings for API token
-        "Content-Type": "application/json;charset=utf-8",
+
+def fetch_movies_with_pagination(page, per_page, query=""):
+    """
+    Fetch movies from movies.csv with pagination and dynamic poster fetching.
+    
+    :param page: Current page number.
+    :param per_page: Number of movies per page.
+    :param query: Search query to filter movies by title.
+    :return: Dictionary containing paginated movie details and pagination info.
+    """
+    movies_path = "Data/movies.csv"
+    links_path = "Data/links.csv"
+
+    # Load movies and links
+    movies = pd.read_csv(movies_path)
+    links = pd.read_csv(links_path)
+
+    # Merge movies with links on movieId
+    merged = movies.merge(links, on="movieId", how="inner")
+
+    # Filter by search query if provided
+    if query:
+        merged = merged[merged["title"].str.contains(query, case=False, na=False)]
+
+    # Paginate results
+    total_movies = len(merged)
+    start_index = (page - 1) * per_page
+    end_index = start_index + per_page
+    paginated_movies = merged.iloc[start_index:end_index]
+
+    # Fetch posters for the paginated results
+    movies_with_posters = []
+    for _, row in paginated_movies.iterrows():
+        poster_url = fetch_poster(row["tmdbId"])
+        movies_with_posters.append({
+            "id": row["movieId"],
+            "title": row["title"],
+            "genres": row["genres"],
+            "poster": poster_url,
+        })
+
+    return {
+        "movies": movies_with_posters,
+        "total_movies": total_movies,
+        "has_more": end_index < total_movies,
     }
-
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        data = response.json()
-        # Extract relevant details (title, overview, poster_path)
-        movies = [
-            {
-                "title": movie["title"],
-                "description": movie["overview"],
-                "poster": f"https://image.tmdb.org/t/p/w500{movie['poster_path']}",
-            }
-            for movie in data["results"]
-        ]
-        return movies
-    else:
-        print(f"Error: Unable to fetch movies from TMDB. Status Code: {response.status_code}")
-        return []
 
 @login_required
 def main_page_view(request):
@@ -105,153 +144,190 @@ def main_page_view(request):
     per_page = 9  # Initial number of movies to show
     load_more_per_page = 3  # Number of movies for each "Show More"
 
-    # Fetch movies from TMDB API
-    all_movies = fetch_tmdb_movies()
+    # Determine the number of movies to fetch
+    movies_to_fetch = per_page if not request.GET.get("load_more", False) else load_more_per_page
+
+    # Fetch movies dynamically with pagination and filtering
+    result = fetch_movies_with_pagination(page, movies_to_fetch, query)
+    movies = result["movies"]
 
     # Handle autocomplete request
     if request.GET.get("autocomplete", False):
-        suggestions = [{"title": movie["title"]} for movie in all_movies if query.lower() in movie["title"].lower()][:10]
+        suggestions = [{"title": movie["title"]} for movie in movies if query.lower() in movie["title"].lower()][:10]
         return JsonResponse(suggestions, safe=False)
 
-    # Filter movies based on search query
-    if query:
-        filtered_movies = [movie for movie in all_movies if query.lower() in movie["title"].lower()]
-    else:
-        filtered_movies = all_movies
-
-    # Handle "load more" request
+    # Handle "Load More" request
     if request.GET.get("load_more", False):
-        start_index = (page - 1) * load_more_per_page
-        end_index = start_index + load_more_per_page
-        return JsonResponse(filtered_movies[start_index:end_index], safe=False)
+        return JsonResponse(movies, safe=False)
 
-    # Limit initial movies
-    start_index = 0
-    end_index = per_page
-    paginated_movies = filtered_movies[start_index:end_index]
-
+    # Render initial movies
     context = {
-        "movies": paginated_movies,
+        "movies": movies,
         "query": query,
-        "has_more": len(filtered_movies) > end_index,  # Show "Show More" button if more movies exist
+        "has_more": result["has_more"],  # Show "Show More" button if more movies exist
     }
     return render(request, 'movies/main.html', context)
 
 @login_required
-@login_required
 def rate_movies_view(request):
-    query = request.GET.get("query", "")
-    page = int(request.GET.get("page", 1))
-    per_page = 3
-    all_movies = fetch_tmdb_movies()
+    query = request.GET.get("query", "")  # Capture search query
+    page = int(request.GET.get("page", 1))  # Current page number
+    per_page = 9  # Movies per page
 
-    # Autocomplete and "Load More" requests
+    # Fetch movies with pagination
+    result = fetch_movies_with_pagination(page, per_page, query)
+    all_movies = result["movies"]
+
+    # Autocomplete request
+    if request.GET.get("autocomplete", False):
+        suggestions = [{"title": movie["title"]} for movie in all_movies if query.lower() in movie["title"].lower()][:10]
+        return JsonResponse(suggestions, safe=False)
+
+    # "Load More" request
     if request.GET.get("load_more", False):
-        start_index = (page - 1) * per_page
-        return JsonResponse(all_movies[start_index:start_index + per_page], safe=False)
+        return JsonResponse(all_movies, safe=False)
 
-    # Handle POST submission
+    # Handle POST submission for saving ratings
     if request.method == "POST":
-        movie_ratings = []
+        # Initialize or retrieve existing ratings from the session
+        movie_ratings = request.session.get("movie_ratings", {})
+        
         for key, value in request.POST.items():
             if key.startswith("rating_") and value.isdigit():
-                movie_ratings.append((int(key.split("_")[1]), int(value)))
+                movie_id = int(key.split("_")[1])  # Extract movie ID from "rating_<movie_id>"
+                rating = int(value)  # Convert rating to integer
+                movie_ratings[movie_id] = rating  # Save or update rating in session
 
         if not movie_ratings:
             messages.error(request, "No ratings were submitted. Please rate at least one movie.")
             return redirect('rate')
 
-        # Add dummy user and save session
-        try:
-            with open("model_matrices.pkl", "rb") as f:
-                model_data = pickle.load(f)
+        # Debug: Check updated ratings
+        print(f"Updated Ratings: {movie_ratings}")
 
-            model = DummyUser(
-                data=([[]], [[]], [[]], [[]], model_data["user_map"], model_data["movie_map"]),
-                latent_d=len(model_data["U_matrix"][0]),
-                lamda=0.01, gamma=0.01, tau=0.1
-            )
-            model.user_matrix = model_data["U_matrix"]
-            model.movie_matrix = model_data["V_matrix"]
-            model.user_bias = model_data["user_bias"]
-            model.movie_bias = model_data["movie_bias"]
+        # Save the ratings back into the session
+        request.session["movie_ratings"] = movie_ratings
+        request.session.modified = True  # Mark session as modified to ensure changes are saved
 
-            dummy_user_id = model.add_dummy_user(movie_ratings)
-            request.session["dummy_user_id"] = dummy_user_id
-        except FileNotFoundError:
-            return JsonResponse({"error": "Model not trained yet."})
-        except Exception as e:
-            return JsonResponse({"error": f"An error occurred: {e}"})
-
+        messages.success(request, "Your ratings have been saved!")
         return redirect('recommendations')
 
-    # Filter and paginate movies
-    filtered_movies = [movie for movie in all_movies if query.lower() in movie["title"].lower()] if query else all_movies
-    start_index = (page - 1) * per_page
-    paginated_movies = filtered_movies[start_index:start_index + per_page]
-
+    # Context for rendering the rate page
     context = {
-        "movies": paginated_movies,
+        "movies": all_movies,
         "query": query,
-        "total_movies": len(all_movies),
+        "total_movies": result["total_movies"],
+        "has_more": result["has_more"],  # Indicates if there are more movies
     }
     return render(request, "movies/rate.html", context)
-
-
-
+    
 @login_required
 def recommendations_view(request):
-    movie_ratings = request.session.get("movie_ratings", {})
-    dummy_user_id = request.session.get("dummy_user_id")
+    dummy_user_ratings = request.session.get("movie_ratings", {})
+    if not dummy_user_ratings:
+        return JsonResponse({"error": "No ratings found. Please rate at least one movie to get recommendations."})
 
     if not os.path.exists("trained_model.pkl"):
         return JsonResponse({"error": "Model not trained yet."})
 
-    # Load the model
+    # 1. Load trained model data
     with open("trained_model.pkl", "rb") as f:
         model_data = pickle.load(f)
 
-    U_matrix = model_data["user_matrix"]
-    V_matrix = model_data["movie_matrix"]
-    user_bias = model_data["user_bias"]
-    movie_bias = model_data["movie_bias"]
-    movie_map = model_data["movie_map"]
+    # 2. Create DummyUser
+    model = DummyUser(
+        data=([], [], [], [], model_data["user_map"], model_data["movie_map"]),
+        latent_d=len(model_data["user_matrix"][0]),
+        lamda=0.01,
+        gamma=0.01,
+        tau=0.1
+    )
+    # Overwrite with loaded data
+    model.user_matrix = model_data["user_matrix"]
+    model.movie_matrix = model_data["movie_matrix"]
+    model.user_bias = model_data["user_bias"]
+    model.movie_bias = model_data["movie_bias"]
+    model.movie_map = model_data["movie_map"]
+    model.finalize_init()  # If needed to set self.V = movie_matrix.T, etc.
 
-    # Debug logs
-    print(f"Loaded Model: U_matrix shape: {U_matrix.shape}, V_matrix shape: {V_matrix.shape}")
-    print(f"Dummy User ID: {dummy_user_id}, User Bias: {user_bias[dummy_user_id]}")
+    # 3. Prepare user ratings
+    dummy_user_ratings_list = [(int(mid), float(rtg)) for mid, rtg in dummy_user_ratings.items()]
 
-    # Fetch movies and recommend
-    all_movies = fetch_tmdb_movies()
-    recommended_movies = []
+    # 4. Update dummy user latent vector and bias
+    dummy_user_latent = np.zeros(model.latent_d)
+    dummy_user_bias = 0
+    iterations = 10
+    for iteration in range(iterations):
+        dummy_user_bias = model.calculate_dummy_user_bias(dummy_user_ratings_list, iteration, dummy_user_latent)
+        dummy_user_latent = model.update_user_latent_dummy(dummy_user_ratings_list, dummy_user_bias)
 
-    for movie in all_movies:
-        movie_id = movie.get("id")
-        movie_idx = movie_map.get(movie_id)
-        if movie_idx and movie_id not in movie_ratings:
-            try:
-                pred_rating = (
-                    np.dot(U_matrix[dummy_user_id], V_matrix[movie_idx]) 
-                    + user_bias[dummy_user_id] 
-                    + movie_bias[movie_idx]
-                )
-                recommended_movies.append({
-                    "title": movie["title"],
-                    "poster": movie["poster"],
-                    "description": movie["description"],
-                    "predicted_rating": round(pred_rating, 2),
-                })
-            except Exception as e:
-                print(f"Error predicting rating for movie ID {movie_id}: {e}")
+    # 5. Compute scores for unseen movies
+    scores = []
+    for movie_id, movie_idx in model.movie_map.items():
+        if movie_id not in dummy_user_ratings:
+            # Make sure movie_idx is valid
+            if movie_idx >= model.V.shape[1]:
                 continue
 
-    # Sort recommendations by predicted rating
-    recommended_movies.sort(key=lambda x: x["predicted_rating"], reverse=True)
+            movie_vector = model.V[:, movie_idx]
+            score = np.dot(dummy_user_latent, movie_vector) + dummy_user_bias + model.movie_bias[movie_idx]
+            scores.append((movie_id, score))
 
-    # Debug recommendations
-    print(f"Top Recommendations: {recommended_movies[:10]}")
+    # Sort by descending predicted score
+    sorted_scores = sorted(scores, key=lambda x: x[1], reverse=True)
 
-    context = {"movies": recommended_movies[:20]}
+    # -------------------------------------------------------------------------
+    # [*] HERE is the key part: do it "the same way" as main_page_view
+    #     1) Load movies.csv and links.csv
+    #     2) Merge them so we have each movie's tmdbId
+    #     3) Use fetch_poster(tmdb_id) to get the poster
+    # -------------------------------------------------------------------------
+    movies_df = pd.read_csv("Data/movies.csv")
+    links_df = pd.read_csv("Data/links.csv")
+
+    # Merge on movieId so we have { movieId, title, genres, tmdbId }
+    merged_df = movies_df.merge(links_df, on="movieId", how="inner")
+
+    page = int(request.GET.get("page", 1))  # Current page number for recommendations
+    per_page = 10  # Number of movies per page
+    query = request.GET.get("query", "")  # Search query (optional)
+
+    # Fetch paginated movies
+    result = fetch_movies_with_pagination(page, per_page, query)
+    all_movies = result["movies"]
+
+    recommended_movies = []
+
+    recommended_movies = []
+    top_n = 20
+    for movie_id, pred_score in sorted_scores[:top_n]:
+        # Query the row(s) in merged_df for this movieId
+        row = merged_df[merged_df["movieId"] == movie_id]
+        if row.empty:
+            continue
+
+        # row could have multiple lines if links.csv has duplicates, but typically not
+        row = row.iloc[0]  # Take the first (or only) match
+        title = row["title"]
+        genres = row["genres"]
+        tmdb_id = row["tmdbId"]
+
+        # fetch poster if tmdb_id is valid
+        poster_url = None
+        if not pd.isna(tmdb_id) and str(tmdb_id).isdigit():
+            poster_url = fetch_poster(int(tmdb_id))
+
+        recommended_movies.append({
+            "id": movie_id,                  # same key as main_page_view
+            "title": title,
+            "genres": genres,
+            "poster": poster_url,
+            "predicted_rating": round(pred_score, 2),
+        })
+
+    context = {
+        "movies": recommended_movies,
+    }
     return render(request, "movies/recommendations.html", context)
 
 
