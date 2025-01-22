@@ -36,8 +36,7 @@ def login_view(request):
         user = authenticate(request, username=username, password=password)
         if user is not None:
             login(request, user)
-            # Redirect to the page the user was trying to access
-            next_url = request.GET.get('next', 'main')  # Default to 'main' if 'next' is not provided
+            next_url = request.GET.get('next', 'main')  
             return redirect(next_url)
         else:
             return render(request, 'movies/login.html', {'error': 'Invalid username or password'})
@@ -55,7 +54,6 @@ def register_view(request):
             return redirect('register')
 
         try:
-            # Create user in Django
             new_user = User.objects.create_user(username=username, password=password)
             
             # Add dummy user embedding for the new user
@@ -141,8 +139,8 @@ def fetch_movies_with_pagination(page, per_page, query=""):
 def main_page_view(request):
     query = request.GET.get("query", "")  # Capture search query
     page = int(request.GET.get("page", 1))  # Capture current page number
-    per_page = 9  # Initial number of movies to show
-    load_more_per_page = 3  # Number of movies for each "Show More"
+    per_page = 9 
+    load_more_per_page = 3  
 
     # Determine the number of movies to fetch
     movies_to_fetch = per_page if not request.GET.get("load_more", False) else load_more_per_page
@@ -187,37 +185,32 @@ def rate_movies_view(request):
     if request.GET.get("load_more", False):
         return JsonResponse(all_movies, safe=False)
 
-    # Handle POST submission for saving ratings
     if request.method == "POST":
-        # Initialize or retrieve existing ratings from the session
         movie_ratings = request.session.get("movie_ratings", {})
         
         for key, value in request.POST.items():
             if key.startswith("rating_") and value.isdigit():
-                movie_id = int(key.split("_")[1])  # Extract movie ID from "rating_<movie_id>"
-                rating = int(value)  # Convert rating to integer
-                movie_ratings[movie_id] = rating  # Save or update rating in session
+                movie_id = int(key.split("_")[1]) 
+                rating = int(value) 
+                movie_ratings[movie_id] = rating 
 
         if not movie_ratings:
             messages.error(request, "No ratings were submitted. Please rate at least one movie.")
             return redirect('rate')
 
-        # Debug: Check updated ratings
         print(f"Updated Ratings: {movie_ratings}")
 
-        # Save the ratings back into the session
         request.session["movie_ratings"] = movie_ratings
-        request.session.modified = True  # Mark session as modified to ensure changes are saved
+        request.session.modified = True  
 
         messages.success(request, "Your ratings have been saved!")
         return redirect('recommendations')
 
-    # Context for rendering the rate page
     context = {
         "movies": all_movies,
         "query": query,
         "total_movies": result["total_movies"],
-        "has_more": result["has_more"],  # Indicates if there are more movies
+        "has_more": result["has_more"],  
     }
     return render(request, "movies/rate.html", context)
 
@@ -229,7 +222,6 @@ def recommendations_view(request):
     if not dummy_user_ratings:
         return JsonResponse({"error": "No ratings found. Please rate at least one movie to get recommendations."})
 
-    # Load your .npy files from movies/recommendation/model/
     base_dir = os.path.join(os.path.dirname(__file__), "recommendation", "model")
 
     movie_matrix_path = os.path.join(base_dir, "movies.npy")
@@ -238,28 +230,25 @@ def recommendations_view(request):
     movie_mapping_path = os.path.join(base_dir, "movies_mapping.npy")
     pkl_path = os.path.join(base_dir, "movies.pkl")
 
-    movie_matrix = np.load(movie_matrix_path)  # shape (numMovies, latent_dim) or (latent_dim, numMovies)
+    movie_matrix = np.load(movie_matrix_path) 
     movie_bias = np.load(movie_bias_path)
     user_matrix = np.load(users_path)
     movie_map_data = np.load(movie_mapping_path, allow_pickle=True)
     if movie_map_data.ndim == 0:
-        movie_map_data = movie_map_data.item()  # Now it's a true Python dict or something
+        movie_map_data = movie_map_data.item() 
 
 
     with open(pkl_path, "rb") as f:
         movies_pickle_data = pickle.load(f)
 
-    # Print shapes to debug
     print(">> Loaded movie_matrix shape:", movie_matrix.shape)
     print(">> Loaded movie_bias shape:", movie_bias.shape)
     print(">> Loaded user_matrix shape:", user_matrix.shape)
-    # If movie_map_data is a dict, just confirm how many keys it has:
     if hasattr(movie_map_data, "keys"):
         print(">> Loaded movie_map_data keys:", len(movie_map_data.keys()))
     else:
         print(">> Loaded movie_map_data length:", len(movie_map_data))
 
-    # Create DummyUser
     from .recommendation.dummy_user import DummyUser
     latent_d = movie_matrix.shape[1] if movie_matrix.shape[0] > movie_matrix.shape[1] else movie_matrix.shape[0]
     print(">> Inferred latent_d from matrix shape:", latent_d)
@@ -276,37 +265,29 @@ def recommendations_view(request):
     model.movie_matrix = movie_matrix
     model.movie_bias = movie_bias
 
-    # If movie_map_data is a dict { realMovieID: index } or something:
-    # Adjust how you assign it to model.movie_map:
     if hasattr(movie_map_data, "item"):
-        model.movie_map = movie_map_data.item()  # if it's a 0D object array
+        model.movie_map = movie_map_data.item()
     else:
         model.movie_map = movie_map_data
 
-    # finalize_init might do model.V = model.movie_matrix.T
     model.finalize_init()
 
     print(">> After finalize_init, shape of model.V:", model.V.shape)
 
-    # Convert session ratings
     dummy_user_ratings_list = [(int(m), float(r)) for m, r in dummy_user_ratings.items()]
 
-    # Build dummy user vector
     dummy_user_latent = np.zeros(model.latent_d)
     dummy_user_bias = 0
     iterations = 10
     for iteration in range(iterations):
         dummy_user_bias = model.calculate_dummy_user_bias(dummy_user_ratings_list, iteration, dummy_user_latent)
         dummy_user_latent = model.update_user_latent_dummy(dummy_user_ratings_list, dummy_user_bias)
-        # Print after each iteration
         print(f">> Iter {iteration}, dummy_user_bias={dummy_user_bias}, latent shape={dummy_user_latent.shape}")
 
-    # Score unseen movies
     scores = []
     for movie_id, movie_idx in model.movie_map.items():
         if movie_id in dummy_user_ratings:
             continue
-        # Print to see if any index is too large
         if movie_idx >= model.V.shape[1]:
             print(f">> Skipping movie_id={movie_id}, index={movie_idx} out of range for model.V")
             continue
@@ -319,7 +300,6 @@ def recommendations_view(request):
 
     sorted_scores = sorted(scores, key=lambda x: x[1], reverse=True)
 
-    # Merge with CSV for posters
     movies_df = pd.read_csv("Data/movies.csv")
     links_df = pd.read_csv("Data/links.csv")
     merged_df = movies_df.merge(links_df, on="movieId", how="inner")
@@ -357,7 +337,6 @@ def logout_view(request):
     return redirect('login')
 
 
-## Initialize dataset processor
 DATA_PATH = os.path.join(os.path.dirname(__file__), '../Data/')
 CACHE_DIR = os.path.join(os.path.dirname(__file__), 'cached_data')
 
@@ -576,7 +555,6 @@ def datasets_view(request):
 def train_model_view(request):
     if request.method == "POST":
         try:
-            # Extract training parameters
             params = request.POST
             epochs = int(params.get("epochs", 15))
             latent_d = int(params.get("latent_d", 10))
@@ -584,7 +562,6 @@ def train_model_view(request):
             gamma = float(params.get("gamma", 0.01))
             tau = float(params.get("tau", 0.1))
 
-            # Load cached data
             train_user, train_movie, test_user, test_movie, user_map, movie_map = processor.load_cached_data()
 
             if not isinstance(train_user, list) or not isinstance(train_movie, list):
@@ -604,10 +581,8 @@ def train_model_view(request):
             def progress_callback(epoch, total_epochs, loss, rmse):
                 progress.append({"epoch": epoch, "total_epochs": total_epochs, "loss": loss, "rmse": rmse})
 
-            # Train the model
             train_metrics, test_metrics = model.fit(epochs=epochs, progress_callback=progress_callback)
 
-            # Generate plots
             train_plot = plot_to_base64(lambda: (
                 plt.plot(train_metrics["loss"], label="Train Loss"),
                 plt.plot(test_metrics["loss"], label="Test Loss"),
@@ -627,10 +602,8 @@ def train_model_view(request):
                 plt.grid()
             ))
 
-            # Save the trained model parameters
             model.save_model("trained_model.pkl")
 
-            # Save U, V matrices, and biases for later use
             with open("model_matrices.pkl", "wb") as f:
                 pickle.dump({
                     "U_matrix": model.user_matrix,
@@ -641,11 +614,9 @@ def train_model_view(request):
                     "movie_map": model.movie_map,
                 }, f)
 
-            # Save training and testing metrics
             with open("train_test_metrics.pkl", "wb") as f:
                 pickle.dump({"train_metrics": train_metrics, "test_metrics": test_metrics}, f)
 
-            # Save progress for visualization
             with open("progress.pkl", "wb") as f:
                 pickle.dump(progress, f)
 
@@ -673,15 +644,13 @@ def test_model_view(request):
             os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
 
             with open(log_file_path, "a") as log_file, redirect_stdout(log_file), redirect_stderr(log_file):
-                # Load cached data
                 _, _, test_user, test_movie, user_map, movie_map = processor.load_cached_data()
 
-                # Example of test data (sample for console output)
                 test_sample = {
-                    "user_data_sample": test_user[:2],  # Sample first 2 users' test data
-                    "movie_data_sample": test_movie[:2],  # Sample first 2 movies' test data
-                    "user_map_sample": {k: user_map[k] for k in list(user_map.keys())[:2]},  # Sample first 2 user mappings
-                    "movie_map_sample": {k: movie_map[k] for k in list(movie_map.keys())[:2]},  # Sample first 2 movie mappings
+                    "user_data_sample": test_user[:2], 
+                    "movie_data_sample": test_movie[:2],
+                    "user_map_sample": {k: user_map[k] for k in list(user_map.keys())[:2]}, 
+                    "movie_map_sample": {k: movie_map[k] for k in list(movie_map.keys())[:2]}, 
                 }
 
                 # Log the test samples
@@ -698,7 +667,7 @@ def file_browser_view(request):
     """
     View to return the directory structure of the project.
     """
-    base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Root of your Django project
+    base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  
     directory_structure = []
 
     for root, dirs, files in os.walk(base_path):
@@ -712,7 +681,6 @@ def file_browser_view(request):
     return JsonResponse({"structure": directory_structure})
 
 
-# Global variables to store logs and provide thread-safe access
 LOG_FILE = "logs/output.log"
 LOG_LOCK = Lock()
 
@@ -735,7 +703,7 @@ def terminal_output_view(request):
     except Exception as e:
         return JsonResponse({"output": f"Error reading logs: {str(e)}"})
 
-BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Root of the Django project
+BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def get_file_content(request):
     """Fetch content of a file for editing."""

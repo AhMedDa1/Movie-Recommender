@@ -46,28 +46,3 @@ class utils:
         rmse = np.sqrt(np.mean(errors**2))
 
         return loss, rmse
-
-
-
-    # @staticmethod
-    # def compute_latent(model, bound=(2, 30)):
-    #     out = []
-
-    #     for latent_d in range(bound[0], bound[1]):
-    #         model._reset_param(latent_d)
-    #         model.rmse_test = []
-    #         model.rmse = []
-    #         model.latent_d = latent_d
-    #         model.fit(10)
-    #         out.append([model.rmse_test])
-    #     return out
-
-    # def _reset_param(self, latent_d):
-    #     self.latent_d = latent_d
-    #     self.user_matrix = np.random.normal(0, 1 / np.sqrt(self.latent_d),
-    #                                          size=(self.num_user, self.latent_d))
-    #     self.movie_matrix = np.random.normal(0, 1 / np.sqrt(self.latent_d),
-    #                                           size=(self.num_movie, self.latent_d))
-
-    #     self.user_bias = np.zeros((self.num_user))
-    #     self.movie_bias = np.zeros((self.num_movie))

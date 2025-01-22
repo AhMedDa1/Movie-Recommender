@@ -77,8 +77,6 @@ class DummyUser(Model):
         so self.V[:, idx] is (10,).
         """
         if self.movie_matrix.shape[1] == self.latent_d:
-            # We expect shape (numMovies, latent_d) -> (latent_d, numMovies)
             self.V = self.movie_matrix.T
         else:
-            # If for some reason it's already (latent_d, numMovies), do nothing
             self.V = self.movie_matrix
