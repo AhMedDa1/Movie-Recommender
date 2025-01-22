@@ -17,7 +17,6 @@ This repository contains a complete implementation of a movie recommendation sys
 - [Dataset](#dataset)
 - [Results and Visualization](#results-and-visualization)
 - [License](#license)
-- [Acknowledgments](#acknowledgments)
 
 ---
 
