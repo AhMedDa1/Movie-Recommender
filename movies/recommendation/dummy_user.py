@@ -8,32 +8,31 @@ class DummyUser(Model):
         super().__init__(data, latent_d, lamda, gamma, tau)
         self.movies = pd.read_csv("Data/movies.csv")
         
-        # We'll wait to set self.V until after we load movie_matrix from the pickle
+        # We'll set self.V after we confirm self.movie_matrix's shape
         self.V = None
 
-        # NO re-processing of movie_map or anything that changes # of columns
-        # self.movie_idx_map = self.movie_map  # We'll do that after we get the actual loaded data.
-
-        self.features_per_movie = []  # If you need it, do it carefully after everything is loaded.
+        # No re-processing of movie_map in init
+        self.features_per_movie = []
 
     def calculate_dummy_user_bias(self, user_dummy, iteration, dummy_user_latent):
+        """
+        Calculate the bias for the dummy user.
+        We expect self.V to be shape (latent_d, numMovies), so indexing V[:, idx] is (latent_d,).
+        """
         bias_sum = 0
         item_counter = 0
+
         for (movie_id, rating) in user_dummy:
             movie_index = self.movie_map[movie_id]
-
             if iteration == 0:
                 # λ * (r_ui - b_i)
                 bias_sum += self.lamda * (rating - self.movie_bias[movie_index])
             else:
                 # λ * (r_ui - (u_latent^T * V_i + b_i))
-                bias_sum += self.lamda * (
-                    rating
-                    - (
-                        np.dot(dummy_user_latent.T, self.V[:, movie_index])
-                        + self.movie_bias[movie_index]
-                    )
-                )
+                # Single-movie vector: self.V[:, movie_index] => shape (latent_d,)
+                pred = np.dot(dummy_user_latent, self.V[:, movie_index]) + self.movie_bias[movie_index]
+                bias_sum += self.lamda * (rating - pred)
+
             item_counter += 1
 
         if item_counter > 0:
@@ -41,35 +40,45 @@ class DummyUser(Model):
         return 0
 
     def update_user_latent_dummy(self, user_dummy, dummy_user_bias):
+        """
+        Update the dummy user's latent vector by normal equations.
+        We do x += V_i * error, y += V_i outer V_i, then solve for new user vector.
+        """
         k = self.latent_d
         x = np.zeros(k)
         y = np.zeros((k, k))
 
         for (movie_id, actual_rating) in user_dummy:
             if movie_id not in self.movie_map:
-                # If user rated a movie that wasn't in training data:
-                # skip or handle differently.
+                # skip movies that weren't in training
                 continue
 
             movie_index = self.movie_map[movie_id]
-
-            # Check for out-of-bounds
             if movie_index >= self.V.shape[1]:
-                # This is the actual problem scenario. You can raise an error or skip
                 raise IndexError(f"Movie index {movie_index} out of range for V with shape {self.V.shape}")
 
+            # Single movie vector => shape (k,)
+            v_m = self.V[:, movie_index]
             error = actual_rating - dummy_user_bias - self.movie_bias[movie_index]
-            x += self.V[:, movie_index] * error
-            y += np.outer(self.V[:, movie_index], self.V[:, movie_index])
 
+            x += v_m * error
+            y += np.outer(v_m, v_m)
+
+        # Add τ * I
         y += np.identity(k) * self.tau
 
+        # Solve for user vector
         return np.linalg.solve(self.lamda * y, self.lamda * x)
 
-    # Optional: If you want to build your features or set self.V after loading, do it in a method:
     def finalize_init(self):
-        # For instance, if your movie_matrix is (numMovies, latent_d):
-        # self.V becomes (latent_d, numMovies)
-        self.V = self.movie_matrix.T
-        # If you want a direct reference
-        # self.movie_idx_map = self.movie_map
+        """
+        Transpose self.movie_matrix so that each column is a single movie vector:
+        if self.movie_matrix is (9774, 10), self.V becomes (10, 9774),
+        so self.V[:, idx] is (10,).
+        """
+        if self.movie_matrix.shape[1] == self.latent_d:
+            # We expect shape (numMovies, latent_d) -> (latent_d, numMovies)
+            self.V = self.movie_matrix.T
+        else:
+            # If for some reason it's already (latent_d, numMovies), do nothing
+            self.V = self.movie_matrix

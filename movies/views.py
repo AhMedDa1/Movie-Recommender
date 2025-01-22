@@ -220,115 +220,135 @@ def rate_movies_view(request):
         "has_more": result["has_more"],  # Indicates if there are more movies
     }
     return render(request, "movies/rate.html", context)
-    
+
+
+
 @login_required
 def recommendations_view(request):
     dummy_user_ratings = request.session.get("movie_ratings", {})
     if not dummy_user_ratings:
         return JsonResponse({"error": "No ratings found. Please rate at least one movie to get recommendations."})
 
-    if not os.path.exists("trained_model.pkl"):
-        return JsonResponse({"error": "Model not trained yet."})
+    # Load your .npy files from movies/recommendation/model/
+    base_dir = os.path.join(os.path.dirname(__file__), "recommendation", "model")
 
-    # 1. Load trained model data
-    with open("trained_model.pkl", "rb") as f:
-        model_data = pickle.load(f)
+    movie_matrix_path = os.path.join(base_dir, "movies.npy")
+    movie_bias_path = os.path.join(base_dir, "m_bias.npy")
+    users_path = os.path.join(base_dir, "users.npy")
+    movie_mapping_path = os.path.join(base_dir, "movies_mapping.npy")
+    pkl_path = os.path.join(base_dir, "movies.pkl")
 
-    # 2. Create DummyUser
+    movie_matrix = np.load(movie_matrix_path)  # shape (numMovies, latent_dim) or (latent_dim, numMovies)
+    movie_bias = np.load(movie_bias_path)
+    user_matrix = np.load(users_path)
+    movie_map_data = np.load(movie_mapping_path, allow_pickle=True)
+    if movie_map_data.ndim == 0:
+        movie_map_data = movie_map_data.item()  # Now it's a true Python dict or something
+
+
+    with open(pkl_path, "rb") as f:
+        movies_pickle_data = pickle.load(f)
+
+    # Print shapes to debug
+    print(">> Loaded movie_matrix shape:", movie_matrix.shape)
+    print(">> Loaded movie_bias shape:", movie_bias.shape)
+    print(">> Loaded user_matrix shape:", user_matrix.shape)
+    # If movie_map_data is a dict, just confirm how many keys it has:
+    if hasattr(movie_map_data, "keys"):
+        print(">> Loaded movie_map_data keys:", len(movie_map_data.keys()))
+    else:
+        print(">> Loaded movie_map_data length:", len(movie_map_data))
+
+    # Create DummyUser
+    from .recommendation.dummy_user import DummyUser
+    latent_d = movie_matrix.shape[1] if movie_matrix.shape[0] > movie_matrix.shape[1] else movie_matrix.shape[0]
+    print(">> Inferred latent_d from matrix shape:", latent_d)
+
     model = DummyUser(
-        data=([], [], [], [], model_data["user_map"], model_data["movie_map"]),
-        latent_d=len(model_data["user_matrix"][0]),
+        data=([], [], [], [], {}, {}),
+        latent_d=latent_d,
         lamda=0.01,
         gamma=0.01,
         tau=0.1
     )
-    # Overwrite with loaded data
-    model.user_matrix = model_data["user_matrix"]
-    model.movie_matrix = model_data["movie_matrix"]
-    model.user_bias = model_data["user_bias"]
-    model.movie_bias = model_data["movie_bias"]
-    model.movie_map = model_data["movie_map"]
-    model.finalize_init()  # If needed to set self.V = movie_matrix.T, etc.
 
-    # 3. Prepare user ratings
-    dummy_user_ratings_list = [(int(mid), float(rtg)) for mid, rtg in dummy_user_ratings.items()]
+    model.user_matrix = user_matrix
+    model.movie_matrix = movie_matrix
+    model.movie_bias = movie_bias
 
-    # 4. Update dummy user latent vector and bias
+    # If movie_map_data is a dict { realMovieID: index } or something:
+    # Adjust how you assign it to model.movie_map:
+    if hasattr(movie_map_data, "item"):
+        model.movie_map = movie_map_data.item()  # if it's a 0D object array
+    else:
+        model.movie_map = movie_map_data
+
+    # finalize_init might do model.V = model.movie_matrix.T
+    model.finalize_init()
+
+    print(">> After finalize_init, shape of model.V:", model.V.shape)
+
+    # Convert session ratings
+    dummy_user_ratings_list = [(int(m), float(r)) for m, r in dummy_user_ratings.items()]
+
+    # Build dummy user vector
     dummy_user_latent = np.zeros(model.latent_d)
     dummy_user_bias = 0
     iterations = 10
     for iteration in range(iterations):
         dummy_user_bias = model.calculate_dummy_user_bias(dummy_user_ratings_list, iteration, dummy_user_latent)
         dummy_user_latent = model.update_user_latent_dummy(dummy_user_ratings_list, dummy_user_bias)
+        # Print after each iteration
+        print(f">> Iter {iteration}, dummy_user_bias={dummy_user_bias}, latent shape={dummy_user_latent.shape}")
 
-    # 5. Compute scores for unseen movies
+    # Score unseen movies
     scores = []
     for movie_id, movie_idx in model.movie_map.items():
-        if movie_id not in dummy_user_ratings:
-            # Make sure movie_idx is valid
-            if movie_idx >= model.V.shape[1]:
-                continue
+        if movie_id in dummy_user_ratings:
+            continue
+        # Print to see if any index is too large
+        if movie_idx >= model.V.shape[1]:
+            print(f">> Skipping movie_id={movie_id}, index={movie_idx} out of range for model.V")
+            continue
 
-            movie_vector = model.V[:, movie_idx]
-            score = np.dot(dummy_user_latent, movie_vector) + dummy_user_bias + model.movie_bias[movie_idx]
-            scores.append((movie_id, score))
+        movie_vector = model.V[:, movie_idx]
+        print(f">> movie_id={movie_id}, movie_idx={movie_idx}, movie_vector shape={movie_vector.shape}")
 
-    # Sort by descending predicted score
+        val = np.dot(dummy_user_latent, movie_vector) + dummy_user_bias + model.movie_bias[movie_idx]
+        scores.append((movie_id, val))
+
     sorted_scores = sorted(scores, key=lambda x: x[1], reverse=True)
 
-    # -------------------------------------------------------------------------
-    # [*] HERE is the key part: do it "the same way" as main_page_view
-    #     1) Load movies.csv and links.csv
-    #     2) Merge them so we have each movie's tmdbId
-    #     3) Use fetch_poster(tmdb_id) to get the poster
-    # -------------------------------------------------------------------------
+    # Merge with CSV for posters
     movies_df = pd.read_csv("Data/movies.csv")
     links_df = pd.read_csv("Data/links.csv")
-
-    # Merge on movieId so we have { movieId, title, genres, tmdbId }
     merged_df = movies_df.merge(links_df, on="movieId", how="inner")
 
-    page = int(request.GET.get("page", 1))  # Current page number for recommendations
-    per_page = 10  # Number of movies per page
-    query = request.GET.get("query", "")  # Search query (optional)
-
-    # Fetch paginated movies
-    result = fetch_movies_with_pagination(page, per_page, query)
-    all_movies = result["movies"]
-
-    recommended_movies = []
-
-    recommended_movies = []
     top_n = 20
+    recommended_movies = []
     for movie_id, pred_score in sorted_scores[:top_n]:
-        # Query the row(s) in merged_df for this movieId
         row = merged_df[merged_df["movieId"] == movie_id]
         if row.empty:
             continue
-
-        # row could have multiple lines if links.csv has duplicates, but typically not
-        row = row.iloc[0]  # Take the first (or only) match
+        row = row.iloc[0]
         title = row["title"]
         genres = row["genres"]
         tmdb_id = row["tmdbId"]
 
-        # fetch poster if tmdb_id is valid
         poster_url = None
         if not pd.isna(tmdb_id) and str(tmdb_id).isdigit():
             poster_url = fetch_poster(int(tmdb_id))
 
         recommended_movies.append({
-            "id": movie_id,                  # same key as main_page_view
+            "id": movie_id,
             "title": title,
             "genres": genres,
             "poster": poster_url,
             "predicted_rating": round(pred_score, 2),
         })
 
-    context = {
-        "movies": recommended_movies,
-    }
-    return render(request, "movies/recommendations.html", context)
+    return render(request, "movies/recommendations.html", {"movies": recommended_movies})
+
 
 
 
