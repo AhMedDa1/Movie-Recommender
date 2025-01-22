@@ -48,7 +48,7 @@ This project demonstrates how advanced collaborative filtering techniques can be
 1. Ensure Docker is installed on your system.
 2. Clone this repository:
    ```bash
-   git clone https://github.com/your_username/Movie-Recommender.git
+   git clone https://github.com/AhMedDa1/Movie-Recommender.git
    cd Movie-Recommender
    ```
 3. Build the Docker image:
@@ -171,12 +171,5 @@ The project uses the [MovieLens 25M dataset](https://grouplens.org/datasets/movi
 ## License
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
-
----
-
-## Acknowledgments
-
-- MovieLens dataset by GroupLens Research.
-- Inspiration and guidance from academic studies on recommendation systems.
 
 ---
