@@ -7,226 +7,83 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
     <style>
-        body {
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-        }
-        main {
-            flex: 1;
-        }
-        #sidebar {
-            position: fixed;
-            top: 56px;
-            left: -250px;
-            width: 250px;
-            height: calc(100% - 56px);
-            background-color: #f8f9fa;
-            border-right: 1px solid #ddd;
-            overflow-y: auto;
-            transition: left 0.3s ease;
-            z-index: 1050;
-        }
-        #sidebar.active {
-            left: 0;
-        }
-        #toggle-sidebar {
-            margin-left: 10px;
-        }
-        #terminal {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            max-height: 250px;
-            overflow-y: auto;
-            background-color: #1e1e1e;
-            color: #dcdcdc;
-            padding: 10px;
-            border-top: 2px solid #007bff;
-            font-family: monospace;
-            z-index: 1050;
-            transition: transform 0.3s ease;
-            transform: translateY(100%);
-        }
-        #terminal.active {
-            transform: translateY(0);
-        }
-        #toggle-terminal {
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            background-color: #007bff;
-            color: #fff;
-            border: none;
-            padding: 10px 15px;
-            border-radius: 50px;
-            z-index: 1100;
-            cursor: pointer;
-            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        header {
-            position: sticky;
-            top: 0;
-            z-index: 1100;
-        }
-        header .navbar {
-            padding: 0.5rem 1rem;
-        }
+        body { display: flex; flex-direction: column; min-height: 100vh; }
+        main { flex: 1; }
+        header { position: sticky; top: 0; z-index: 1100; }
+        .navbar-custom { background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%); }
+        .navbar-custom .navbar-brand, .navbar-custom .nav-link { color: #fff; }
+        .navbar-custom .nav-link.active, .navbar-custom .nav-link:hover { color: #e2e6ea; }
+        .footer-custom { background: #0b1220; color: #cfd8e3; }
+        .footer-custom a { color: #9ec5fe; text-decoration: none; }
+        .footer-custom a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
     <!-- Header -->
-    <header class="bg-dark text-white">
-        <div class="container">
-            <nav class="navbar navbar-expand-lg navbar-dark">
-                <button id="toggle-sidebar" class="btn btn-light me-3">☰</button>
-                <a class="navbar-brand" href="{% url 'main' %}">Movie App</a>
-                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-                <div class="collapse navbar-collapse" id="navbarNav">
-                    <ul class="navbar-nav me-auto">
-                        <li class="nav-item"><a class="nav-link" href="{% url 'main' %}">Main</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{% url 'rate' %}">Rate Movies</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{% url 'recommendations' %}">Recommendations</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{% url 'datasets' %}">Datasets</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{% url 'model' %}">Model</a></li>
-                    </ul>
-                    <ul class="navbar-nav">
-                        {% if user.is_authenticated %}
-                            <li class="nav-item dropdown">
-                                <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                    <i class="bi bi-person-circle fs-5 me-2"></i> {{ user.username }}
-                                </a>
-                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
-                                    <li><a class="dropdown-item" href="{% url 'logout' %}">Logout</a></li>
-                                </ul>
-                            </li>
-                        {% else %}
-                            <li class="nav-item"><a class="nav-link" href="{% url 'login' %}">Login</a></li>
-                            <li class="nav-item"><a class="nav-link" href="{% url 'register' %}">Register</a></li>
-                        {% endif %}
-                    </ul>
+    <header>
+        <div class="container-fluid px-0">
+            <nav class="navbar navbar-expand-lg navbar-custom shadow-sm">
+                <div class="container">
+                    <a class="navbar-brand fw-semibold" href="{% url 'main' %}"><i class="bi bi-film me-2"></i>Movie App</a>
+                    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                        <span class="navbar-toggler-icon"></span>
+                    </button>
+                    <div class="collapse navbar-collapse" id="navbarNav">
+                        <ul class="navbar-nav me-auto">
+                            <li class="nav-item"><a class="nav-link" href="{% url 'main' %}">Main</a></li>
+                            <li class="nav-item"><a class="nav-link" href="{% url 'rate' %}">Rate Movies</a></li>
+                            <li class="nav-item"><a class="nav-link" href="{% url 'recommendations' %}">Recommendations</a></li>
+                            <li class="nav-item"><a class="nav-link" href="{% url 'datasets' %}">Datasets</a></li>
+                        </ul>
+                        <ul class="navbar-nav">
+                            {% if user.is_authenticated %}
+                                <li class="nav-item dropdown">
+                                    <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                        <i class="bi bi-person-circle fs-5 me-2"></i> {{ user.username }}
+                                    </a>
+                                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                                        <li><a class="dropdown-item" href="{% url 'logout' %}">Logout</a></li>
+                                    </ul>
+                                </li>
+                            {% else %}
+                                <li class="nav-item"><a class="nav-link" href="{% url 'login' %}">Login</a></li>
+                                <li class="nav-item"><a class="nav-link" href="{% url 'register' %}">Register</a></li>
+                            {% endif %}
+                        </ul>
+                    </div>
                 </div>
             </nav>
         </div>
     </header>
 
-    <!-- Sidebar -->
-    <div id="sidebar">
-        <h4 class="text-center mt-3">File Browser</h4>
-        <div id="file-browser">Loading...</div>
+    <!-- Flash Messages -->
+    <div class="container mt-3">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert {% if message.tags %}alert-{{ message.tags }}{% else %}alert-info{% endif %} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
     </div>
 
     <!-- Content -->
-    <div class="container-fluid my-4">
-        <div id="editor" class="mb-4 d-none">
-            <h4>Edit File</h4>
-            <textarea id="code-editor" rows="20" class="form-control mb-2"></textarea>
-            <button id="save-code-btn" class="btn btn-success">Save</button>
-        </div>
-        <div id="content">
+    <main>
+        <div class="container my-4">
             {% block content %}{% endblock %}
         </div>
-    </div>
-
-    <!-- Terminal -->
-    <div id="terminal">Waiting for updates...</div>
-    <button id="toggle-terminal">Terminal</button>
+    </main>
 
     <!-- Footer -->
-    <footer class="bg-dark text-white py-3 mt-5">
-        <div class="container text-center">
-            <p>&copy; 2025 Movie Recommendation App</p>
+    <footer class="footer-custom py-4 mt-auto">
+        <div class="container d-flex flex-column flex-md-row justify-content-between align-items-center gap-2">
+            <div class="small">© 2024 AIMS South Africa </div>
+            <div class="small">Applied ML at Scale</div>
         </div>
     </footer>
+
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.min.js"></script>
-
-    <!-- Sidebar and Terminal Scripts -->
-    <script>
-        // Sidebar toggle
-        const sidebar = document.getElementById('sidebar');
-        const toggleSidebar = document.getElementById('toggle-sidebar');
-        toggleSidebar.addEventListener('click', () => {
-            sidebar.classList.toggle('active');
-        });
-
-        // Terminal toggle
-        const terminal = document.getElementById('terminal');
-        const toggleTerminal = document.getElementById('toggle-terminal');
-        toggleTerminal.addEventListener('click', () => {
-            terminal.classList.toggle('active');
-        });
-
-        // Fetch and render the file browser structure
-        fetch('/file-browser/')
-            .then(response => response.json())
-            .then(data => {
-                const fileBrowser = document.getElementById('file-browser');
-                const structure = data.structure;
-
-                function renderStructure(structure) {
-                    let html = "<ul>";
-                    structure.forEach(item => {
-                        html += `<li><strong>${item.path}</strong><ul>`;
-                        item.directories.forEach(dir => {
-                            html += `<li>📁 ${dir}</li>`;
-                        });
-                        item.files.forEach(file => {
-                            html += `<li><a href="#" class="file-link" data-path="${item.path}/${file}">📄 ${file}</a></li>`;
-                        });
-                        html += "</ul></li>";
-                    });
-                    html += "</ul>";
-                    return html;
-                }
-
-                fileBrowser.innerHTML = renderStructure(structure);
-
-                // Add event listeners for file links
-                document.querySelectorAll('.file-link').forEach(link => {
-                    link.addEventListener('click', function (e) {
-                        e.preventDefault();
-                        const filePath = this.dataset.path;
-                        fetch(`/get-file-content/?file_path=${encodeURIComponent(filePath)}`)
-                            .then(response => response.json())
-                            .then(data => {
-                                document.getElementById('editor').classList.remove('d-none');
-                                document.getElementById('code-editor').value = data.content;
-                                document.getElementById('save-code-btn').dataset.path = filePath;
-                            });
-                    });
-                });
-            });
-
-        // Save code
-        document.getElementById('save-code-btn').addEventListener('click', () => {
-            const filePath = document.getElementById('save-code-btn').dataset.path;
-            const content = document.getElementById('code-editor').value;
-            fetch('/save-file-content/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'X-CSRFToken': '{{ csrf_token }}'
-                },
-                body: `file_path=${encodeURIComponent(filePath)}&content=${encodeURIComponent(content)}`
-            }).then(response => response.json())
-              .then(data => alert(data.message));
-        });
-
-        // Poll terminal output
-        function fetchTerminalUpdates() {
-            fetch('/terminal-output/')
-                .then(response => response.json())
-                .then(data => {
-                    terminal.textContent = data.output;
-                    terminal.scrollTop = terminal.scrollHeight;
-                });
-        }
-
-        setInterval(fetchTerminalUpdates, 2000);
-    </script>
 </body>
 </html>

@@ -4,11 +4,75 @@
 
 {% block content %}
 <style>
-    .card-text {
+    /* Modern main page styles */
+    .page-hero {
+        background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%);
+        border-radius: 16px;
+        padding: 32px;
+        color: #fff;
+        position: relative;
         overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
     }
+    .page-hero::after {
+        content: "";
+        position: absolute;
+        right: -60px;
+        bottom: -60px;
+        width: 240px;
+        height: 240px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        filter: blur(2px);
+    }
+
+    .search-wrapper {
+        position: relative;
+        max-width: 720px;
+        margin: 0 auto;
+    }
+    .search-input {
+        padding-left: 44px;
+        height: 52px;
+        border-radius: 14px;
+        border: none;
+        box-shadow: 0 8px 24px rgba(13, 110, 253, 0.25);
+    }
+    .search-icon {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #6c757d;
+    }
+
+    #suggestions {
+        left: 0;
+        right: 0;
+        top: calc(100% + 8px);
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+        max-height: 260px;
+        overflow-y: auto;
+        z-index: 10;
+    }
+    .suggestion-item { transition: background-color .15s ease; }
+    .suggestion-item:hover { background-color: #f0f0f0; cursor: pointer; }
+
+    .movie-card {
+        border: 0;
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 6px 22px rgba(0, 0, 0, 0.08);
+        transition: transform .15s ease, box-shadow .15s ease;
+        background: #fff;
+    }
+    .movie-card:hover { transform: translateY(-3px); box-shadow: 0 12px 30px rgba(0,0,0,.12); }
+    .movie-card .card-img-top { height: 180px; object-fit: cover; }
+    .movie-card .card-body { padding: 10px 12px; }
+    .movie-card .card-title { font-size: 0.95rem; margin-bottom: 4px; }
+    .movie-card .card-text { font-size: 0.85rem; color: #6c757d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0; }
+
+    .movies-grid { row-gap: 1rem; }
 </style>
 <script>
     // Load More Movies
@@ -21,9 +85,9 @@
                 const container = document.getElementById("movies-container");
                 data.forEach(movie => {
                     const col = document.createElement("div");
-                    col.classList.add("col-md-4", "mb-4");
+                    col.className = "col-6 col-sm-4 col-md-3 col-lg-2";
                     col.innerHTML = `
-                        <div class="card">
+                        <div class="card movie-card">
                             <img src="${movie.poster}" class="card-img-top" alt="Movie Poster">
                             <div class="card-body">
                                 <h5 class="card-title">${movie.title}</h5>
@@ -62,29 +126,26 @@
     }
 </script>
 
-<style>
-    .suggestion-item:hover {
-        background-color: #f0f0f0;
-        cursor: pointer;
-    }
-</style>
-
-
-
-
 <div class="container mt-4">
-    <!-- Search Bar -->
-    <form class="mb-4 position-relative">
-        <input type="text" id="search" name="query" value="{{ query }}" class="form-control me-2" 
-               placeholder="Search for a movie..." oninput="showSuggestions(this.value)">
-        <div id="suggestions" class="position-absolute bg-white border" style="z-index: 10; max-height: 200px; overflow-y: auto;"></div>
-    </form>
+    <!-- Hero + Search Bar -->
+    <section class="page-hero mb-4">
+        <div class="text-center mb-3">
+            <h1 class="h3 mb-2">Discover your next favorite movie</h1>
+            <p class="mb-0 opacity-75">Search, rate, and get tailored recommendations</p>
+        </div>
+        <form class="search-wrapper position-relative">
+            <i class="bi bi-search search-icon fs-5"></i>
+            <input type="text" id="search" name="query" value="{{ query }}" class="form-control search-input"
+                   placeholder="Search for a movie..." oninput="showSuggestions(this.value)">
+            <div id="suggestions" class="position-absolute bg-white border"></div>
+        </form>
+    </section>
 
     <!-- Movie Cards -->
-    <div id="movies-container" class="row">
+    <div id="movies-container" class="row movies-grid g-3 g-sm-4">
         {% for movie in movies %}
-            <div class="col-md-4 mb-4">
-                <div class="card">
+            <div class="col-6 col-sm-4 col-md-3 col-lg-2">
+                <div class="card movie-card">
                     <img src="{{ movie.poster }}" class="card-img-top" alt="Movie Poster">
                     <div class="card-body">
                         <h5 class="card-title">{{ movie.title }}</h5>
@@ -100,7 +161,7 @@
     
     {% if has_more %}
         <div class="text-center mt-4">
-            <button type="button" class="btn btn-secondary" onclick="loadMoreMovies()">Show More</button>
+            <button type="button" class="btn btn-primary btn-lg rounded-pill shadow-sm" onclick="loadMoreMovies()">Show More</button>
         </div>
     {% endif %}
 </div>

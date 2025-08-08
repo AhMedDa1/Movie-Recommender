@@ -4,28 +4,78 @@
 
 {% block content %}
 <style>
-    .star-rating {
-        font-size: 1.5rem;
-        cursor: pointer;
-    }
-    .star-rating .checked {
-        color: gold;
-    }
-    .suggestion-item:hover {
-        background-color: #f0f0f0;
-        cursor: pointer;
-    }
+    .page-hero { background: linear-gradient(135deg, #6f42c1 0%, #0d6efd 100%); border-radius: 16px; padding: 24px; color: #fff; position: relative; overflow: hidden; }
+    .page-hero::after { content: ""; position: absolute; right: -50px; top: -50px; width: 180px; height: 180px; background: rgba(255,255,255,.12); border-radius: 50%; filter: blur(2px); }
+    .movie-card { border: 0; border-radius: 14px; overflow: hidden; box-shadow: 0 6px 22px rgba(0,0,0,.08); transition: transform .15s ease, box-shadow .15s ease; background: #fff; height: 100%; }
+    .movie-card:hover { transform: translateY(-3px); box-shadow: 0 12px 30px rgba(0,0,0,.12); }
+    .movie-card .card-img-top { height: 180px; object-fit: cover; }
+    .movie-card .card-body { padding: 12px; }
+    .movie-card .card-title { font-size: 0.95rem; margin-bottom: 8px; }
+    .movie-card .card-text { font-size: 0.85rem; color: #6c757d; }
+    .star-rating { font-size: 1.25rem; cursor: pointer; color: #adb5bd; }
+    .star-rating .star.checked, .star-rating .star:hover, .star-rating .star:hover ~ .star { color: #ffc107; }
 </style>
 <script>
     // Handle Star Rating
     function setRating(movieId, rating) {
-        const stars = document.querySelectorAll(`#stars_${movieId} .star`);
-        stars.forEach((star, index) => {
-            star.classList.toggle('checked', index < rating);
-        });
-        document.getElementById(`rating_input_${movieId}`).value = rating;
+        const container = document.getElementById(`stars_${movieId}`);
+        const stars = container.querySelectorAll('.star');
+        stars.forEach((star, index) => { star.classList.toggle('checked', index < rating); });
+        const input = document.getElementById(`rating_input_${movieId}`);
+        if (input) input.value = rating;
     }
+    function hoverRating(movieId, rating) {
+        const container = document.getElementById(`stars_${movieId}`);
+        const stars = container.querySelectorAll('.star');
+        stars.forEach((star, index) => { star.classList.toggle('checked', index < rating); });
+    }
+</script>
 
+<div class="container mt-4">
+    <section class="page-hero mb-4 text-center">
+        <h1 class="h4 mb-1">Rate movies you’ve watched</h1>
+        <p class="mb-0 opacity-75">More ratings = better personalized recommendations</p>
+    </section>
+
+    <!-- Search Bar -->
+    <form class="mb-4 position-relative">
+        <input type="text" id="search" name="query" value="{{ query }}" class="form-control me-2" placeholder="Search for a movie..." oninput="showSuggestions(this.value)">
+        <div id="suggestions" class="position-absolute bg-white border" style="z-index:10; max-height:200px; overflow-y:auto;"></div>
+    </form>
+    <p class="text-center mt-3">Total Movies: {{ total_movies }}</p>
+
+    <!-- Movie Cards -->
+    <form method="post" id="movies-form">
+        {% csrf_token %}
+        <div id="movies-container" class="row g-3 g-sm-4">
+            {% for movie in movies %}
+                <div class="col-6 col-sm-4 col-md-3 col-lg-2">
+                    <div class="card movie-card h-100">
+                        <img src="{{ movie.poster }}" class="card-img-top" alt="Movie Poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ movie.title }}</h5>
+                            <p class="card-text">{{ movie.description|default:""|truncatechars:90 }}</p>
+                            <div id="stars_{{ movie.id }}" class="star-rating">
+                                <span class="star" onclick="setRating('{{ movie.id }}', 1)" onmouseover="hoverRating('{{ movie.id }}', 1)">★</span>
+                                <span class="star" onclick="setRating('{{ movie.id }}', 2)" onmouseover="hoverRating('{{ movie.id }}', 2)">★</span>
+                                <span class="star" onclick="setRating('{{ movie.id }}', 3)" onmouseover="hoverRating('{{ movie.id }}', 3)">★</span>
+                                <span class="star" onclick="setRating('{{ movie.id }}', 4)" onmouseover="hoverRating('{{ movie.id }}', 4)">★</span>
+                                <span class="star" onclick="setRating('{{ movie.id }}', 5)" onmouseover="hoverRating('{{ movie.id }}', 5)">★</span>
+                            </div>
+                            <input type="hidden" id="rating_input_{{ movie.id }}" name="rating_{{ movie.id }}" value="0">
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+        <div class="text-center mt-4">
+            <button type="button" class="btn btn-outline-secondary" onclick="loadMoreMovies()">Load More</button>
+        </div>
+        <button type="submit" class="btn btn-primary w-100 mt-4">Submit Ratings</button>
+    </form>
+</div>
+
+<script>
     // Autocomplete Search
     function showSuggestions(input) {
         const suggestions = document.getElementById("suggestions");
@@ -37,17 +87,13 @@
                     data.forEach(movie => {
                         const div = document.createElement("div");
                         div.textContent = movie.title;
-                        div.classList.add("suggestion-item", "p-2");
-                        div.onclick = () => {
-                            document.getElementById("search").value = movie.title;
-                            suggestions.innerHTML = "";
-                        };
+                        div.classList.add("p-2");
+                        div.onclick = () => { document.getElementById("search").value = movie.title; suggestions.innerHTML = ""; };
                         suggestions.appendChild(div);
                     });
                 });
         }
     }
-
     // Load More Movies
     let page = 1;
     function loadMoreMovies() {
@@ -58,24 +104,22 @@
                 const container = document.getElementById("movies-container");
                 data.forEach(movie => {
                     const col = document.createElement("div");
-                    col.classList.add("col-md-4", "mb-4");
+                    col.className = "col-6 col-sm-4 col-md-3 col-lg-2";
+                    const desc = movie.description ? movie.description.substring(0, 90) : '';
                     col.innerHTML = `
-                        <div class="card h-100">
-                            <img src="${movie.poster}" class="card-img-top" alt="Movie Poster">
+                        <div class="card movie-card h-100">
+                            <img src="${movie.poster}" class="card-img-top" alt="Movie Poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'">
                             <div class="card-body">
                                 <h5 class="card-title">${movie.title}</h5>
-                                <p class="card-text">
-                                    ${movie.description.substring(0, 100)}...
-                                    <span><a href="#" class="text-primary">Read More</a></span>
-                                </p>
-                                <div id="stars_${movie.movieId}" class="star-rating">
-                                    <span class="star" onclick="setRating('${movie.movieId}', 1)">★</span>
-                                    <span class="star" onclick="setRating('${movie.movieId}', 2)">★</span>
-                                    <span class="star" onclick="setRating('${movie.movieId}', 3)">★</span>
-                                    <span class="star" onclick="setRating('${movie.movieId}', 4)">★</span>
-                                    <span class="star" onclick="setRating('${movie.movieId}', 5)">★</span>
+                                <p class="card-text">${desc}</p>
+                                <div id="stars_${movie.id}" class="star-rating">
+                                    <span class="star" onclick="setRating('${movie.id}', 1)" onmouseover="hoverRating('${movie.id}', 1)">★</span>
+                                    <span class="star" onclick="setRating('${movie.id}', 2)" onmouseover="hoverRating('${movie.id}', 2)">★</span>
+                                    <span class="star" onclick="setRating('${movie.id}', 3)" onmouseover="hoverRating('${movie.id}', 3)">★</span>
+                                    <span class="star" onclick="setRating('${movie.id}', 4)" onmouseover="hoverRating('${movie.id}', 4)">★</span>
+                                    <span class="star" onclick="setRating('${movie.id}', 5)" onmouseover="hoverRating('${movie.id}', 5)">★</span>
                                 </div>
-                                <input type="hidden" id="rating_input_${movie.movieId}" name="rating_${movie.movieId}" value="0">
+                                <input type="hidden" id="rating_input_${movie.id}" name="rating_${movie.id}" value="0">
                             </div>
                         </div>`;
                     container.appendChild(col);
@@ -83,48 +127,4 @@
             });
     }
 </script>
-
-<div class="container mt-4">
-    <!-- Search Bar -->
-    <form class="mb-4 position-relative">
-        <input type="text" id="search" name="query" value="{{ query }}" class="form-control me-2" 
-               placeholder="Search for a movie..." oninput="showSuggestions(this.value)">
-        <div id="suggestions" class="position-absolute bg-white border" style="z-index: 10; max-height: 200px; overflow-y: auto;"></div>
-    </form>
-    <p class="text-center mt-3">Total Movies: {{ total_movies }}</p>
-
-
-    <!-- Movie Cards -->
-    <form method="post" id="movies-form">
-        {% csrf_token %}
-        <div id="movies-container" class="row">
-            {% for movie in movies %}
-                <div class="col-md-4 mb-4">
-                    <div class="card h-100">
-                        <img src="{{ movie.poster }}" class="card-img-top" alt="Movie Poster">
-                        <div class="card-body">
-                            <h5 class="card-title">{{ movie.title }}</h5>
-                            <p class="card-text">
-                                {{ movie.description|truncatechars:100 }}
-                                <span><a href="#" class="text-primary">Read More</a></span>
-                            </p>
-                            <div id="stars_{{ forloop.counter }}" class="star-rating">
-                                <span class="star" onclick="setRating('{{ forloop.counter }}', 1)">★</span>
-                                <span class="star" onclick="setRating('{{ forloop.counter }}', 2)">★</span>
-                                <span class="star" onclick="setRating('{{ forloop.counter }}', 3)">★</span>
-                                <span class="star" onclick="setRating('{{ forloop.counter }}', 4)">★</span>
-                                <span class="star" onclick="setRating('{{ forloop.counter }}', 5)">★</span>
-                            </div>
-                            <input type="hidden" id="rating_input_{{ forloop.counter }}" name="rating_{{ forloop.counter }}" value="0">
-                        </div>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-        <div class="text-center mt-4">
-            <button type="button" class="btn btn-secondary" onclick="loadMoreMovies()">Load More</button>
-        </div>
-        <button type="submit" class="btn btn-primary w-100 mt-4">Submit Ratings</button>
-    </form>
-</div>
 {% endblock %}

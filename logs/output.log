@@ -1,0 +1,39 @@
+[recs] session_ratings_count=9 keys_sample=['1', '2', '3', '4', '5']
+[recs][error] The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+[recs] falling back to popularity due to empty recommendations
+[recs] session_ratings_count=9 keys_sample=['1', '2', '3', '4', '5']
+[recs] using model-dir PKLs (item_latent/item_bias/movie_to_idx/idx_to_movie)
+[recs] matched_session_ratings_in_map=9 (model-dir-pkls)
+[recs] session_ratings_count=9 keys_sample=['1', '2', '3', '4', '5']
+[recs] using model-dir PKLs (item_latent/item_bias/movie_to_idx/idx_to_movie)
+[recs] matched_session_ratings_in_map=9 (model-dir-pkls)
+[recs] session_ratings_count=1 keys_sample=['1']
+[recs] using model-dir PKLs (item_latent/item_bias/movie_to_idx/idx_to_movie)
+[recs] matched_session_ratings_in_map=1 (model-dir-pkls)
+[recs][pkls] top10_ids=[3114, 78499, 4886, 6377, 2355, 8961, 364, 588, 68954, 4306]
+[recs][pkls] TS2 score=4.321 approx_rank=1 of 84432
+[recs] session_ratings_count=1 keys_sample=['1']
+[recs] using model-dir PKLs (item_latent/item_bias/movie_to_idx/idx_to_movie)
+[recs] matched_session_ratings_in_map=1 (model-dir-pkls)
+[recs][pkls] top10_ids=[3114, 78499, 4886, 6377, 2355, 8961, 364, 588, 68954, 4306]
+[recs][pkls] TS2 score=4.321 approx_rank=1 of 84432
+[recs] session_ratings_count=1 keys_sample=['1']
+[recs] using model-dir PKLs (item_latent/item_bias/movie_to_idx/idx_to_movie)
+[recs] matched_session_ratings_in_map=1 (model-dir-pkls)
+[recs][pkls] top10_ids=[3114, 78499, 4886, 6377, 2355, 8961, 364, 588, 68954, 4306]
+[recs][pkls] TS2 score=4.321 approx_rank=1 of 84432
+[recs] session_ratings_count=1 keys_sample=['1']
+[recs] using model-dir PKLs (item_latent/item_bias/movie_to_idx/idx_to_movie)
+[recs] matched_session_ratings_in_map=1 (model-dir-pkls)
+[recs][pkls] top10_ids=[3114, 78499, 4886, 6377, 2355, 8961, 364, 588, 68954, 4306]
+[recs][pkls] TS2 score=4.321 approx_rank=1 of 84432
+[recs] session_ratings_count=1 keys_sample=['2']
+[recs] using model-dir PKLs (item_latent/item_bias/movie_to_idx/idx_to_movie)
+[recs] matched_session_ratings_in_map=1 (model-dir-pkls)
+[recs][pkls] top10_ids=[480, 586, 780, 1, 141, 500, 367, 1580, 317, 2953]
+[recs][pkls] TS2 score=2.559 approx_rank=28 of 84432
+[recs] session_ratings_count=1 keys_sample=['2']
+[recs] using model-dir PKLs (item_latent/item_bias/movie_to_idx/idx_to_movie)
+[recs] matched_session_ratings_in_map=1 (model-dir-pkls)
+[recs][pkls] top10_ids=[480, 586, 780, 1, 141, 500, 367, 1580, 317, 2953]
+[recs][pkls] TS2 score=2.559 approx_rank=28 of 84432

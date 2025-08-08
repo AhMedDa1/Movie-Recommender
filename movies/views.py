@@ -28,6 +28,7 @@ from django.http import JsonResponse, HttpResponseBadRequest
 
 
 MOVIES_FILE = 'Data/movies.csv'
+FALLBACK_POSTER = 'https://via.placeholder.com/300x450?text=No+Image'
 
 def login_view(request):
     if request.method == 'POST':
@@ -187,18 +188,19 @@ def rate_movies_view(request):
 
     if request.method == "POST":
         movie_ratings = request.session.get("movie_ratings", {})
+        new_ratings_added = False
         
         for key, value in request.POST.items():
             if key.startswith("rating_") and value.isdigit():
                 movie_id = int(key.split("_")[1]) 
                 rating = int(value) 
-                movie_ratings[movie_id] = rating 
+                if rating > 0:  # only persist explicit ratings
+                    movie_ratings[movie_id] = rating 
+                    new_ratings_added = True
 
-        if not movie_ratings:
+        if not new_ratings_added:
             messages.error(request, "No ratings were submitted. Please rate at least one movie.")
             return redirect('rate')
-
-        print(f"Updated Ratings: {movie_ratings}")
 
         request.session["movie_ratings"] = movie_ratings
         request.session.modified = True  
@@ -220,112 +222,337 @@ def rate_movies_view(request):
 def recommendations_view(request):
     dummy_user_ratings = request.session.get("movie_ratings", {})
     if not dummy_user_ratings:
-        return JsonResponse({"error": "No ratings found. Please rate at least one movie to get recommendations."})
+        messages.info(request, "Please rate a few movies first to get personalized recommendations.")
+        return redirect('rate')
 
-    base_dir = os.path.join(os.path.dirname(__file__), "recommendation", "model")
+    # Paths for model artifacts
+    model_dir = os.path.join(os.path.dirname(__file__), "recommendation", "model")
+    pkl_item_latent = os.path.join(model_dir, "item_latent.pkl")
+    pkl_item_bias = os.path.join(model_dir, "item_bias.pkl")
+    pkl_movie_to_idx = os.path.join(model_dir, "movie_to_idx.pkl")
+    pkl_idx_to_movie = os.path.join(model_dir, "idx_to_movie.pkl")
 
-    movie_matrix_path = os.path.join(base_dir, "movies.npy")
-    movie_bias_path = os.path.join(base_dir, "m_bias.npy")
-    users_path = os.path.join(base_dir, "users.npy")
-    movie_mapping_path = os.path.join(base_dir, "movies_mapping.npy")
-    pkl_path = os.path.join(base_dir, "movies.pkl")
-
-    movie_matrix = np.load(movie_matrix_path) 
-    movie_bias = np.load(movie_bias_path)
-    user_matrix = np.load(users_path)
-    movie_map_data = np.load(movie_mapping_path, allow_pickle=True)
-    if movie_map_data.ndim == 0:
-        movie_map_data = movie_map_data.item() 
-
-
-    with open(pkl_path, "rb") as f:
-        movies_pickle_data = pickle.load(f)
-
-    print(">> Loaded movie_matrix shape:", movie_matrix.shape)
-    print(">> Loaded movie_bias shape:", movie_bias.shape)
-    print(">> Loaded user_matrix shape:", user_matrix.shape)
-    if hasattr(movie_map_data, "keys"):
-        print(">> Loaded movie_map_data keys:", len(movie_map_data.keys()))
-    else:
-        print(">> Loaded movie_map_data length:", len(movie_map_data))
-
-    from .recommendation.dummy_user import DummyUser
-    latent_d = movie_matrix.shape[1] if movie_matrix.shape[0] > movie_matrix.shape[1] else movie_matrix.shape[0]
-    print(">> Inferred latent_d from matrix shape:", latent_d)
-
-    model = DummyUser(
-        data=([], [], [], [], {}, {}),
-        latent_d=latent_d,
-        lamda=0.01,
-        gamma=0.01,
-        tau=0.1
-    )
-
-    model.user_matrix = user_matrix
-    model.movie_matrix = movie_matrix
-    model.movie_bias = movie_bias
-
-    if hasattr(movie_map_data, "item"):
-        model.movie_map = movie_map_data.item()
-    else:
-        model.movie_map = movie_map_data
-
-    model.finalize_init()
-
-    print(">> After finalize_init, shape of model.V:", model.V.shape)
-
-    dummy_user_ratings_list = [(int(m), float(r)) for m, r in dummy_user_ratings.items()]
-
-    dummy_user_latent = np.zeros(model.latent_d)
-    dummy_user_bias = 0
-    iterations = 10
-    for iteration in range(iterations):
-        dummy_user_bias = model.calculate_dummy_user_bias(dummy_user_ratings_list, iteration, dummy_user_latent)
-        dummy_user_latent = model.update_user_latent_dummy(dummy_user_ratings_list, dummy_user_bias)
-        print(f">> Iter {iteration}, dummy_user_bias={dummy_user_bias}, latent shape={dummy_user_latent.shape}")
-
-    scores = []
-    for movie_id, movie_idx in model.movie_map.items():
-        if movie_id in dummy_user_ratings:
-            continue
-        if movie_idx >= model.V.shape[1]:
-            print(f">> Skipping movie_id={movie_id}, index={movie_idx} out of range for model.V")
-            continue
-
-        movie_vector = model.V[:, movie_idx]
-        print(f">> movie_id={movie_id}, movie_idx={movie_idx}, movie_vector shape={movie_vector.shape}")
-
-        val = np.dot(dummy_user_latent, movie_vector) + dummy_user_bias + model.movie_bias[movie_idx]
-        scores.append((movie_id, val))
-
-    sorted_scores = sorted(scores, key=lambda x: x[1], reverse=True)
-
-    movies_df = pd.read_csv("Data/movies.csv")
-    links_df = pd.read_csv("Data/links.csv")
-    merged_df = movies_df.merge(links_df, on="movieId", how="inner")
-
-    top_n = 20
+    # Try 1: Structured PKLs from model dir (preferred)
+    used_model = None
     recommended_movies = []
-    for movie_id, pred_score in sorted_scores[:top_n]:
-        row = merged_df[merged_df["movieId"] == movie_id]
-        if row.empty:
-            continue
-        row = row.iloc[0]
-        title = row["title"]
-        genres = row["genres"]
-        tmdb_id = row["tmdbId"]
+    try:
+        append_to_log(f"[recs] session_ratings_count={len(dummy_user_ratings)} keys_sample={list(dummy_user_ratings.keys())[:5]}")
 
-        poster_url = None
-        if not pd.isna(tmdb_id) and str(tmdb_id).isdigit():
-            poster_url = fetch_poster(int(tmdb_id))
+        if all(os.path.exists(p) for p in [pkl_item_latent, pkl_item_bias, pkl_movie_to_idx, pkl_idx_to_movie]):
+            append_to_log("[recs] using model-dir PKLs (item_latent/item_bias/movie_to_idx/idx_to_movie)")
+            with open(pkl_item_latent, 'rb') as f:
+                item_latent = pickle.load(f)
+            with open(pkl_item_bias, 'rb') as f:
+                item_bias = pickle.load(f)
+            with open(pkl_movie_to_idx, 'rb') as f:
+                movie_to_idx = pickle.load(f)
+            with open(pkl_idx_to_movie, 'rb') as f:
+                idx_to_movie = pickle.load(f)
 
-        recommended_movies.append({
-            "id": movie_id,
-            "title": title,
-            "genres": genres,
-            "poster": poster_url,
-            "predicted_rating": round(pred_score, 2),
-        })
+            # Normalize mappings possibly stored as lists
+            if isinstance(idx_to_movie, list):
+                idx_to_movie = {int(i): int(mid) for i, mid in enumerate(idx_to_movie)}
+            else:
+                idx_to_movie = {int(k): int(v) for k, v in idx_to_movie.items()}
+
+            if isinstance(movie_to_idx, list):
+                movie_to_idx = {int(mid): int(i) for i, mid in enumerate(movie_to_idx)}
+            else:
+                movie_to_idx = {int(k): int(v) for k, v in movie_to_idx.items()}
+
+            V = np.array(item_latent)
+            mb = np.array(item_bias).reshape(-1)
+            # Orient factors to (k, n)
+            if V.shape[1] <= V.shape[0]:
+                V = V.T
+            k = V.shape[0]
+            n = V.shape[1]
+            used_model = f"model-dir-pkls k={k} n={n}"
+
+            # Build ratings list using only movies present in mapping
+            ratings_list = [(int(m), float(r)) for m, r in dummy_user_ratings.items() if int(m) in movie_to_idx]
+            append_to_log(f"[recs] matched_session_ratings_in_map={len(ratings_list)} (model-dir-pkls)")
+
+            # Cold-start dummy user solve
+            lamda, tau = 0.01, 0.1
+            nu = np.zeros(k)
+            b = 0.0
+            for _ in range(10):
+                s, c = 0.0, 0
+                for m_id, actual in ratings_list:
+                    idx = movie_to_idx[m_id]
+                    pred = float(nu @ V[:, idx] + mb[idx])
+                    s += lamda * (actual - pred)
+                    c += 1
+                b = (s / ((lamda * c) + tau)) if c > 0 else 0.0
+
+                x = np.zeros(k)
+                y = np.zeros((k, k))
+                for m_id, actual in ratings_list:
+                    idx = movie_to_idx[m_id]
+                    v_m = V[:, idx]
+                    err = actual - b - mb[idx]
+                    x += v_m * err
+                    y += np.outer(v_m, v_m)
+                y += np.eye(k) * tau
+                nu = np.linalg.solve(lamda * y, lamda * x) if ratings_list else np.zeros(k)
+
+            # Score vectorized and exclude rated
+            preds = (nu @ V) + b + mb
+            for m_id, _ in ratings_list:
+                preds[movie_to_idx[m_id]] = -1e9
+
+            # Top-N indices
+            topN = 20
+            top_idx = np.argsort(-preds)
+
+            # Debug: log top-10 ids and Toy Story 2 placement if available
+            try:
+                top10_ids = []
+                inv_map = idx_to_movie
+                for idx in top_idx[:10]:
+                    mid = inv_map.get(int(idx))
+                    top10_ids.append(int(mid) if mid is not None else None)
+                append_to_log(f"[recs][pkls] top10_ids={top10_ids}")
+                # Toy Story 2 diagnostics
+                TS2_ID = 3114
+                if TS2_ID in movie_to_idx:
+                    ts2_idx = movie_to_idx[TS2_ID]
+                    ts2_score = float(nu @ V[:, ts2_idx] + b + mb[ts2_idx])
+                    approx_rank = int(np.sum(preds > ts2_score)) + 1
+                    append_to_log(f"[recs][pkls] TS2 score={ts2_score:.3f} approx_rank={approx_rank} of {preds.shape[0]}")
+            except Exception as _e:
+                append_to_log(f"[recs][pkls][log_error] {_e}")
+
+            # Join with metadata and posters; filter to titles we can display
+            movies_df = pd.read_csv("Data/movies.csv")
+            links_df = pd.read_csv("Data/links.csv")
+            merged_df = movies_df.merge(links_df, on="movieId", how="left")
+            inv_map = idx_to_movie
+
+            for idx in top_idx:
+                mid = inv_map.get(int(idx))
+                row = merged_df[merged_df["movieId"] == mid]
+                if row.empty:
+                    continue
+                row = row.iloc[0]
+                tmdb_id = row.get("tmdbId")
+                poster_url = None
+                if pd.notna(tmdb_id):
+                    try:
+                        poster_url = fetch_poster(int(tmdb_id))
+                    except Exception:
+                        poster_url = None
+                if not poster_url:
+                    poster_url = FALLBACK_POSTER
+
+                recommended_movies.append({
+                    "id": int(mid),
+                    "title": row.get("title"),
+                    "genres": row.get("genres"),
+                    "poster": poster_url,
+                    "predicted_rating": round(max(0.0, min(5.0, float(preds[idx]))), 2),
+                })
+                if len(recommended_movies) >= topN:
+                    break
+
+        else:
+            # Try 2: Root PKL dict (U_matrix/V_matrix)
+            model_dict = None
+            for p in [os.path.join(settings.BASE_DIR, 'model_matrices.pkl'), os.path.join(settings.BASE_DIR, 'trained_model.pkl')]:
+                if os.path.exists(p):
+                    with open(p, 'rb') as f:
+                        model_dict = pickle.load(f)
+                    used_model = os.path.basename(p)
+                    break
+
+            if model_dict is not None:
+                user_matrix = model_dict['U_matrix'] if 'U_matrix' in model_dict else model_dict.get('user_matrix')
+                movie_matrix = model_dict['V_matrix'] if 'V_matrix' in model_dict else model_dict.get('movie_matrix')
+                user_bias = model_dict.get('user_bias')
+                movie_bias = model_dict.get('movie_bias')
+                movie_map = model_dict.get('movie_map')
+                append_to_log(f"[recs] using root PKL {used_model} users={getattr(user_matrix,'shape',None)} movies={getattr(movie_matrix,'shape',None)} map_size={len(movie_map) if movie_map else 0}")
+
+                latent_d = min(movie_matrix.shape[0], movie_matrix.shape[1])
+                model = DummyUser(
+                    data=([], [], [], [], {}, {}),
+                    latent_d=latent_d,
+                    lamda=0.01,
+                    gamma=0.01,
+                    tau=0.1,
+                )
+                model.user_matrix = user_matrix
+                model.movie_matrix = movie_matrix
+                model.user_bias = user_bias if user_bias is not None else np.zeros(user_matrix.shape[0])
+                model.movie_bias = movie_bias if movie_bias is not None else np.zeros(movie_matrix.shape[0])
+                model.movie_map = {int(k): int(v) for k, v in movie_map.items()}
+                model.finalize_init()
+
+                ratings_list = [(int(m), float(r)) for m, r in dummy_user_ratings.items() if int(m) in model.movie_map]
+
+                dummy_user_latent = np.zeros(model.latent_d)
+                dummy_user_bias = 0.0
+                for _ in range(10):
+                    dummy_user_bias = model.calculate_dummy_user_bias(ratings_list, _, dummy_user_latent)
+                    dummy_user_latent = model.update_user_latent_dummy(ratings_list, dummy_user_bias)
+
+                scores = []
+                for movie_id, movie_idx in model.movie_map.items():
+                    if movie_id in dummy_user_ratings:
+                        continue
+                    if movie_idx >= model.V.shape[1]:
+                        continue
+                    movie_vector = model.V[:, movie_idx]
+                    val = float(np.dot(dummy_user_latent, movie_vector) + dummy_user_bias + model.movie_bias[movie_idx])
+                    val = max(0.0, min(5.0, val))
+                    scores.append((movie_id, val))
+
+                sorted_scores = sorted(scores, key=lambda x: x[1], reverse=True)
+
+                movies_df = pd.read_csv("Data/movies.csv")
+                links_df = pd.read_csv("Data/links.csv")
+                merged_df = movies_df.merge(links_df, on="movieId", how="left")
+
+                for movie_id, pred_score in sorted_scores[:20]:
+                    row = merged_df[merged_df["movieId"] == movie_id]
+                    if row.empty:
+                        continue
+                    row = row.iloc[0]
+                    tmdb_id = row.get("tmdbId")
+                    poster_url = None
+                    if pd.notna(tmdb_id):
+                        try:
+                            poster_url = fetch_poster(int(tmdb_id))
+                        except Exception:
+                            poster_url = None
+                    if not poster_url:
+                        poster_url = FALLBACK_POSTER
+
+                    recommended_movies.append({
+                        "id": int(movie_id),
+                        "title": row.get("title"),
+                        "genres": row.get("genres"),
+                        "poster": poster_url,
+                        "predicted_rating": round(max(0.0, min(5.0, float(pred_score))), 2),
+                    })
+
+            else:
+                # Try 3: NPY fallback
+                append_to_log("[recs] model pickles not found, using .npy fallback")
+                base_dir = os.path.join(os.path.dirname(__file__), "recommendation", "model")
+                movie_matrix_path = os.path.join(base_dir, "movies.npy")
+                movie_bias_path = os.path.join(base_dir, "m_bias.npy")
+                users_path = os.path.join(base_dir, "users.npy")
+                movie_mapping_path = os.path.join(base_dir, "movies_mapping.npy")
+
+                movie_matrix = np.load(movie_matrix_path)
+                movie_bias = np.load(movie_bias_path)
+                user_matrix = np.load(users_path)
+                movie_map_data = np.load(movie_mapping_path, allow_pickle=True)
+                if hasattr(movie_map_data, "item"):
+                    movie_map_data = movie_map_data.item()
+
+                model = DummyUser(
+                    data=([], [], [], [], {}, {}),
+                    latent_d=min(movie_matrix.shape[0], movie_matrix.shape[1]),
+                    lamda=0.01,
+                    gamma=0.01,
+                    tau=0.1,
+                )
+                model.user_matrix = user_matrix
+                model.movie_matrix = movie_matrix
+                model.movie_bias = movie_bias
+                model.movie_map = movie_map_data
+                model.finalize_init()
+
+                ratings_list = [(int(m), float(r)) for m, r in dummy_user_ratings.items() if int(m) in model.movie_map]
+
+                dummy_user_latent = np.zeros(model.latent_d)
+                dummy_user_bias = 0.0
+                for _ in range(10):
+                    dummy_user_bias = model.calculate_dummy_user_bias(ratings_list, _, dummy_user_latent)
+                    dummy_user_latent = model.update_user_latent_dummy(ratings_list, dummy_user_bias)
+
+                scores = []
+                for movie_id, movie_idx in model.movie_map.items():
+                    if movie_id in dummy_user_ratings:
+                        continue
+                    if movie_idx >= model.V.shape[1]:
+                        continue
+                    movie_vector = model.V[:, movie_idx]
+                    val = float(np.dot(dummy_user_latent, movie_vector) + dummy_user_bias + model.movie_bias[movie_idx])
+                    val = max(0.0, min(5.0, val))
+                    scores.append((movie_id, val))
+
+                sorted_scores = sorted(scores, key=lambda x: x[1], reverse=True)
+
+                movies_df = pd.read_csv("Data/movies.csv")
+                links_df = pd.read_csv("Data/links.csv")
+                merged_df = movies_df.merge(links_df, on="movieId", how="left")
+
+                for movie_id, pred_score in sorted_scores[:20]:
+                    row = merged_df[merged_df["movieId"] == movie_id]
+                    if row.empty:
+                        continue
+                    row = row.iloc[0]
+                    tmdb_id = row.get("tmdbId")
+                    poster_url = None
+                    if pd.notna(tmdb_id):
+                        try:
+                            poster_url = fetch_poster(int(tmdb_id))
+                        except Exception:
+                            poster_url = None
+                    if not poster_url:
+                        poster_url = FALLBACK_POSTER
+
+                    recommended_movies.append({
+                        "id": int(movie_id),
+                        "title": row.get("title"),
+                        "genres": row.get("genres"),
+                        "poster": poster_url,
+                        "predicted_rating": round(max(0.0, min(5.0, float(pred_score))), 2),
+                    })
+
+    except Exception as e:
+        messages.error(request, f"Failed to build recommendations: {e}")
+        append_to_log(f"[recs][error] {e}")
+        recommended_movies = []
+
+    # Popularity fallback if still empty
+    if not recommended_movies:
+        append_to_log("[recs] falling back to popularity due to empty recommendations")
+        try:
+            ratings_df = pd.read_csv("Data/ratings.csv")
+            movies_df = pd.read_csv("Data/movies.csv")
+            links_df = pd.read_csv("Data/links.csv")
+            counts = ratings_df.groupby('movieId').size().sort_values(ascending=False)
+            top_ids = counts.index.tolist()[:20]
+            merged_df = movies_df.merge(links_df, on="movieId", how="left")
+            for movie_id in top_ids:
+                row = merged_df[merged_df["movieId"] == movie_id]
+                if row.empty:
+                    continue
+                row = row.iloc[0]
+                tmdb_id = row.get("tmdbId")
+                poster_url = None
+                if pd.notna(tmdb_id):
+                    try:
+                        poster_url = fetch_poster(int(tmdb_id))
+                    except Exception:
+                        poster_url = None
+                if not poster_url:
+                    poster_url = FALLBACK_POSTER
+                recommended_movies.append({
+                    "id": int(movie_id),
+                    "title": row.get("title"),
+                    "genres": row.get("genres"),
+                    "poster": poster_url,
+                    "predicted_rating": None,
+                })
+        except Exception as e:
+            append_to_log(f"[recs][popularity_error] {e}")
+            pass
 
     return render(request, "movies/recommendations.html", {"movies": recommended_movies})
 

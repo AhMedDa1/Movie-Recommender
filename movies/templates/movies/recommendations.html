@@ -3,27 +3,86 @@
 {% block title %}Recommendations{% endblock %}
 
 {% block content %}
-{% if movies %}
-    <div class="row mt-4">
-        {% for movie in movies %}
-            <div class="col-md-3 mb-4">
-                <div class="card">
-                    <img src="{{ movie.poster }}" class="card-img-top" alt="Movie Poster">
-                    <div class="card-body">
-                        <h5 class="card-title">{{ movie.title }}</h5>
-                        <p class="card-text">
-                            {{ movie.description|truncatechars:100 }}
-                            <br>
-                            <strong>Predicted Rating:</strong> {{ movie.predicted_rating }} / 5
-                            <span><a href="#" class="text-primary">Read More</a></span>
-                        </p>
+<style>
+    .page-hero {
+        background: linear-gradient(135deg, #20c997 0%, #0d6efd 100%);
+        border-radius: 16px;
+        padding: 28px 24px;
+        color: #fff;
+        position: relative;
+        overflow: hidden;
+    }
+    .page-hero::after {
+        content: "";
+        position: absolute;
+        left: -60px;
+        top: -60px;
+        width: 220px;
+        height: 220px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        filter: blur(2px);
+    }
+
+    .movie-card {
+        border: 0;
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 6px 22px rgba(0, 0, 0, 0.08);
+        transition: transform .15s ease, box-shadow .15s ease;
+        background: #fff;
+        height: 100%;
+    }
+    .movie-card:hover { transform: translateY(-3px); box-shadow: 0 12px 30px rgba(0,0,0,.12); }
+    .movie-card .card-img-top { height: 180px; object-fit: cover; }
+    .movie-card .card-body { padding: 10px 12px; }
+    .movie-card .card-title { font-size: 0.95rem; margin-bottom: 6px; }
+    .movie-card .card-text { font-size: 0.85rem; color: #6c757d; margin-bottom: 0; }
+
+    .rating-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: #f8f9fa;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 0.8rem;
+        color: #0d6efd;
+        font-weight: 600;
+    }
+</style>
+
+<div class="container mt-4">
+    <section class="page-hero mb-4">
+        <div class="text-center">
+            <h1 class="h3 mb-1">Recommended for you</h1>
+            <p class="mb-0 opacity-75">Movies picked based on your ratings</p>
+        </div>
+    </section>
+
+    {% if movies %}
+        <div class="row g-3 g-sm-4">
+            {% for movie in movies %}
+                <div class="col-6 col-sm-4 col-md-3 col-lg-2">
+                    <div class="card movie-card h-100">
+                        <img src="{{ movie.poster }}" class="card-img-top" alt="Movie Poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Image'">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ movie.title }}</h5>
+                            <p class="card-text">
+                                {{ movie.description|default:""|truncatechars:90 }}
+                            </p>
+                            <div class="rating-badge mt-2">
+                                <i class="bi bi-star-fill text-warning"></i>
+                                {{ movie.predicted_rating }} / 5
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
-        {% endfor %}
-    </div>
-{% else %}
-    <p class="text-center mt-4">No recommendations available. Please rate more movies to get personalized recommendations.</p>
-{% endif %}
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-center mt-4">No recommendations available. Please rate more movies to get personalized recommendations.</p>
+    {% endif %}
+</div>
 
 {% endblock %}
